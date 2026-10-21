@@ -11,19 +11,25 @@ import (
 var (
 	yesFlag     bool
 	conciseFlag bool
+	// Version is the application version, overridable at build time via:
+	// -ldflags "-X github.com/abhigyan-chatterjee/aurora/cmd.Version=x.y.z"
+	Version = "0.3.0"
 )
 
 var rootCmd = &cobra.Command{
-	Use:     "aurora",
-	Version: "0.3.0",
-	Short:   "Aurora — A powerful, beginner-first package assistant for Arch Linux",
+	Use:           "aurora",
+	Version:       Version,
+	SilenceUsage:  true,
+	SilenceErrors: true,
+	Short:         "Aurora — A powerful, beginner-first package assistant for Arch Linux",
 	Long: `Aurora is a package manager and AUR helper for Arch Linux that combines
 the power of Paru with the simplicity of apt. It prioritizes official repositories,
 explains commands in plain English, and provides transparent package lifecycle management.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		if _, err := exec.LookPath("pacman"); err != nil {
-			fmt.Println("Aurora currently supports Arch-based systems only. This machine does not appear to be Arch-based.")
-			os.Exit(1)
+			msg := "Aurora currently supports Arch-based systems only. This machine does not appear to be Arch-based (pacman not found)"
+			fmt.Fprintln(os.Stderr, msg)
+			return fmt.Errorf("%s", msg)
 		}
 		return nil
 	},
@@ -35,6 +41,7 @@ func init() {
 }
 
 func Execute() {
+	rootCmd.Version = Version
 	rootCmd.CompletionOptions.DisableDefaultCmd = true
 	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
 	err := rootCmd.Execute()
