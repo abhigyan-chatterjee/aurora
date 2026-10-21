@@ -18,13 +18,20 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: archlinux:latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Install Go, Git, and pacman-contrib
         run: |
           pacman -Syu --noconfirm go git pacman-contrib base-devel
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Ensure safe.directory after checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Check formatting (gofmt)
         run: |

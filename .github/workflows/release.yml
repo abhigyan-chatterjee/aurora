@@ -14,15 +14,22 @@ jobs:
     runs-on: ubuntu-latest
     container:
       image: archlinux:latest
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Install Go, Git, pacman-contrib, and GitHub CLI
         run: |
           pacman -Syu --noconfirm go git pacman-contrib base-devel github-cli
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Checkout repository with full history and tags
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Ensure safe.directory after checkout
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Run go vet & test suite
         run: |
