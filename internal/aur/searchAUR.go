@@ -12,7 +12,7 @@ import (
 	"github.com/abhigyan-chatterjee/aurora/internal/resolve"
 )
 
-const aurUserAgent = "aurora/0.3"
+const aurUserAgent = "aurora/0.4"
 
 func newAURRequest(url string) (*http.Request, error) {
 	req, err := http.NewRequest("GET", url, nil)

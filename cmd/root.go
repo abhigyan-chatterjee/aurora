@@ -13,7 +13,7 @@ var (
 	conciseFlag bool
 	// Version is the application version, overridable at build time via:
 	// -ldflags "-X github.com/abhigyan-chatterjee/aurora/cmd.Version=x.y.z"
-	Version = "0.3.0"
+	Version = "0.4.0"
 )
 
 var rootCmd = &cobra.Command{

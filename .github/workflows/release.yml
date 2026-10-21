@@ -47,7 +47,12 @@ jobs:
           if [ -z "$LATEST_TAG" ]; then
             CODE_VER=$(grep -Eo 'Version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' cmd/root.go | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' || echo "0.3.0")
             BASE_VER="$CODE_VER"
-            RANGE="HEAD~1..HEAD"
+            LAST_ANY_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
+            if [ -n "$LAST_ANY_TAG" ]; then
+              RANGE="${LAST_ANY_TAG}..HEAD"
+            else
+              RANGE="HEAD"
+            fi
           else
             BASE_VER="${LATEST_TAG#v}"
             RANGE="${LATEST_TAG}..HEAD"
