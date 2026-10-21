@@ -1,6 +1,7 @@
 package lookup
 
 import (
+	"errors"
 	"sync"
 
 	"github.com/abhigyan-chatterjee/aurora/internal/aur"
@@ -57,10 +58,6 @@ func ResolveOne(query string) (*resolve.ResolvedPackage, error) {
 
 	wg.Wait()
 
-	if pacmanErr != nil {
-		return nil, pacmanErr
-	}
-
 	res := &resolve.ResolvedPackage{
 		Query: query,
 	}
@@ -71,14 +68,14 @@ func ResolveOne(query string) (*resolve.ResolvedPackage, error) {
 		return res, nil
 	}
 
-	if aurErr != nil {
-		return nil, aurErr
-	}
-
 	if aurPkg != nil {
 		res.AURResult = aurPkg
 		res.ChosenSource = resolve.SourceAUR
 		return res, nil
+	}
+
+	if err := errors.Join(pacmanErr, aurErr); err != nil {
+		return nil, err
 	}
 
 	res.ChosenSource = resolve.SourceUnknown
@@ -94,13 +91,14 @@ func ResolveBatch(queries []string) []*resolve.ResolvedPackage {
 		wg.Add(1)
 		go func(idx int, query string) {
 			defer wg.Done()
-			res, _ := ResolveOne(query)
+			res, err := ResolveOne(query)
 			if res != nil {
 				results[idx] = res
 			} else {
 				results[idx] = &resolve.ResolvedPackage{
 					Query:        query,
 					ChosenSource: resolve.SourceUnknown,
+					Err:          err,
 				}
 			}
 		}(i, q)

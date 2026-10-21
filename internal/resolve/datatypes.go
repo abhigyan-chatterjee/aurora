@@ -40,4 +40,7 @@ type ResolvedPackage struct {
 	PacmanResult *PacmanResult
 	AURResult    *AURResult
 	ChosenSource PackageSource
+	// Err holds a lookup failure (e.g. network or pacman error) so callers can
+	// distinguish "could not check sources" from "package not found".
+	Err error
 }
