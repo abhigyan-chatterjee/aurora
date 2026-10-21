@@ -83,7 +83,7 @@ func remove(cmd *cobra.Command, args []string) {
 				var items []ui.SelectionItem
 				for i, m := range matches {
 					items = append(items, ui.SelectionItem{
-						Index: mIndex(i),
+						Index: i + 1,
 						Name:  m,
 					})
 					fmt.Printf("  [%d] %s\n", i+1, m)
@@ -123,10 +123,6 @@ func remove(cmd *cobra.Command, args []string) {
 	} else {
 		fmt.Printf("Successfully removed: %s\n", strings.Join(removeList, ", "))
 	}
-}
-
-func mIndex(i int) int {
-	return i + 1
 }
 
 var removeCmd = &cobra.Command{

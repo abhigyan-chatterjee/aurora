@@ -97,7 +97,12 @@ func search(cmd *cobra.Command, args []string) {
 
 		if len(pacmanResults) > 0 {
 			fmt.Println("\nOfficial repositories")
-			for _, r := range pacmanResults {
+			const maxOfficialDisplay = 15
+			for i, r := range pacmanResults {
+				if i >= maxOfficialDisplay {
+					fmt.Printf("  ... and %d more official packages (refine query for specific results)\n", len(pacmanResults)-maxOfficialDisplay)
+					break
+				}
 				item := ui.SelectionItem{
 					Index:       itemCounter,
 					Name:        r.Name,
@@ -119,8 +124,10 @@ func search(cmd *cobra.Command, args []string) {
 
 		if len(aurResults) > 0 {
 			fmt.Println("\nAUR")
+			const maxAURDisplay = 10
 			for i, r := range aurResults {
-				if i >= 10 {
+				if i >= maxAURDisplay {
+					fmt.Printf("  ... and %d more AUR packages (refine query for specific results)\n", len(aurResults)-maxAURDisplay)
 					break
 				}
 				item := ui.SelectionItem{
@@ -202,7 +209,7 @@ Examples:
 }
 
 func init() {
-	searchCmd.Flags().StringVar(&searchFromFlag, "from", "any", "filter source: 'official' or 'aur'")
+	searchCmd.Flags().StringVar(&searchFromFlag, "from", "any", "filter source: 'official' (or 'repo') or 'aur'")
 	searchCmd.Flags().BoolVarP(&searchOfficialFlag, "official", "O", false, "search only official repositories")
 	searchCmd.Flags().BoolVarP(&searchAURFlag, "aur", "A", false, "search only the Arch User Repository")
 	rootCmd.AddCommand(searchCmd)

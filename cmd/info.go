@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -19,10 +20,10 @@ var (
 	infoAURFlag      bool
 )
 
-func info(cmd *cobra.Command, args []string) {
+func info(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		fmt.Println("Please provide a package name.")
-		return
+		return nil
 	}
 
 	sourceFilter := strings.ToLower(strings.TrimSpace(infoFromFlag))
@@ -48,16 +49,18 @@ func info(cmd *cobra.Command, args []string) {
 	}
 
 	if len(validArgs) == 0 {
-		return
+		return fmt.Errorf("no valid package names provided")
 	}
 
 	var resolvedList []*resolve.ResolvedPackage
 
 	if sourceFilter == "official" || sourceFilter == "repo" {
 		for _, q := range validArgs {
-			pPkg, _ := pacman.SearchPacmanExact(q)
+			pPkg, err := pacman.SearchPacmanExact(q)
 			res := &resolve.ResolvedPackage{Query: q, ChosenSource: resolve.SourceUnknown}
-			if pPkg != nil {
+			if err != nil {
+				res.Err = err
+			} else if pPkg != nil {
 				res.PacmanResult = pPkg
 				res.ChosenSource = resolve.SourceOfficial
 			}
@@ -65,9 +68,11 @@ func info(cmd *cobra.Command, args []string) {
 		}
 	} else if sourceFilter == "aur" {
 		for _, q := range validArgs {
-			aPkg, _ := aur.SearchAURExact(q)
+			aPkg, err := aur.SearchAURExact(q)
 			res := &resolve.ResolvedPackage{Query: q, ChosenSource: resolve.SourceUnknown}
-			if aPkg != nil {
+			if err != nil {
+				res.Err = err
+			} else if aPkg != nil {
 				res.AURResult = aPkg
 				res.ChosenSource = resolve.SourceAUR
 			}
@@ -77,7 +82,13 @@ func info(cmd *cobra.Command, args []string) {
 		resolvedList = lookup.ResolveBatch(validArgs)
 	}
 
+	var errs []error
 	for _, resolved := range resolvedList {
+		if resolved.Err != nil {
+			fmt.Printf("\nWarning: could not check sources for \"%s\": %v\n", resolved.Query, resolved.Err)
+			errs = append(errs, fmt.Errorf("%s: %w", resolved.Query, resolved.Err))
+			continue
+		}
 		if resolved.ChosenSource == resolve.SourceOfficial && resolved.PacmanResult != nil {
 			pkg := resolved.PacmanResult
 			fmt.Printf("\n--- Package Details: %s ---\n", pkg.Name)
@@ -100,8 +111,10 @@ func info(cmd *cobra.Command, args []string) {
 			}
 		} else {
 			fmt.Printf("\nPackage \"%s\" was not found in specified sources.\n", resolved.Query)
+			errs = append(errs, fmt.Errorf("package %q not found", resolved.Query))
 		}
 	}
+	return errors.Join(errs...)
 }
 
 var infoCmd = &cobra.Command{
@@ -113,11 +126,11 @@ Use --from to restrict information lookups to official repositories or AUR.
 Examples:
   aurora info neovim
   aurora info yay --from aur`,
-	Run: info,
+	RunE: info,
 }
 
 func init() {
-	infoCmd.Flags().StringVar(&infoFromFlag, "from", "any", "filter source: 'official' or 'aur'")
+	infoCmd.Flags().StringVar(&infoFromFlag, "from", "any", "filter source: 'official' (or 'repo') or 'aur'")
 	infoCmd.Flags().BoolVarP(&infoOfficialFlag, "official", "O", false, "inspect only official repositories")
 	infoCmd.Flags().BoolVarP(&infoAURFlag, "aur", "A", false, "inspect only the Arch User Repository")
 	rootCmd.AddCommand(infoCmd)

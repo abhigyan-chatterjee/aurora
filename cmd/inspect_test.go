@@ -24,18 +24,26 @@ func TestInspect_OfficialPackage(t *testing.T) {
 }
 
 func TestInspect_InvalidPackage(t *testing.T) {
+	var err error
 	out := captureStdout(func() {
-		inspect(inspectCmd, []string{"../invalid"})
+		err = inspect(inspectCmd, []string{"../invalid"})
 	})
+	if err == nil {
+		t.Errorf("expected non-nil error for invalid package name")
+	}
 	if !strings.Contains(out, "invalid package name format") {
 		t.Errorf("expected invalid format warning, got: %s", out)
 	}
 }
 
 func TestInspect_NoArgs(t *testing.T) {
+	var err error
 	out := captureStdout(func() {
-		inspect(inspectCmd, []string{})
+		err = inspect(inspectCmd, []string{})
 	})
+	if err != nil {
+		t.Errorf("expected nil error for no args, got: %v", err)
+	}
 	if !strings.Contains(out, "Please provide a package name to inspect.") {
 		t.Errorf("expected prompt to provide package name, got: %s", out)
 	}

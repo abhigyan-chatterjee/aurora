@@ -5,9 +5,11 @@ import (
 	"os/exec"
 	"sort"
 	"strings"
+	"sync"
 
 	"github.com/abhigyan-chatterjee/aurora/internal/aur"
 	"github.com/abhigyan-chatterjee/aurora/internal/pacman"
+	"github.com/abhigyan-chatterjee/aurora/internal/resolve"
 	"github.com/spf13/cobra"
 )
 
@@ -26,6 +28,19 @@ type listEntry struct {
 	Detail  string
 }
 
+// runPacmanQuery runs a read-only pacman query. Pacman's exit code 1 means
+// "no matching packages", which is treated as an empty result, not an error.
+func runPacmanQuery(args ...string) (string, error) {
+	out, err := exec.Command("pacman", args...).Output()
+	if err != nil {
+		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			return "", nil
+		}
+		return "", err
+	}
+	return string(out), nil
+}
+
 func listPackages(cmd *cobra.Command, args []string) {
 	var query string
 	if len(args) > 0 {
@@ -36,9 +51,11 @@ func listPackages(cmd *cobra.Command, args []string) {
 
 	if listOrphansFlag {
 		// 1. List orphans
-		cmdOut, err := exec.Command("pacman", "-Qtd").Output()
-		if err == nil {
-			lines := strings.Split(strings.TrimSpace(string(cmdOut)), "\n")
+		cmdOut, err := runPacmanQuery("-Qtd")
+		if err != nil {
+			fmt.Printf("Warning: error listing orphan packages: %v\n", err)
+		} else {
+			lines := strings.Split(strings.TrimSpace(cmdOut), "\n")
 			for _, l := range lines {
 				parts := strings.Fields(l)
 				if len(parts) >= 2 {
@@ -60,7 +77,9 @@ func listPackages(cmd *cobra.Command, args []string) {
 
 		// Check foreign/AUR packages
 		foreign, err := pacman.GetForeignPackages()
-		if err == nil && len(foreign) > 0 {
+		if err != nil {
+			fmt.Printf("Warning: error checking foreign packages: %v\n", err)
+		} else if len(foreign) > 0 {
 			var pkgNames []string
 			for name := range foreign {
 				pkgNames = append(pkgNames, name)
@@ -68,20 +87,32 @@ func listPackages(cmd *cobra.Command, args []string) {
 			sort.Strings(pkgNames)
 
 			aurResults, aErr := aur.GetAURInfoBatch(pkgNames)
-			if aErr == nil {
+			if aErr != nil {
+				fmt.Printf("Warning: error checking AUR updates: %v\n", aErr)
+			}
+			if len(aurResults) > 0 {
+				var mu sync.Mutex
+				var wg sync.WaitGroup
 				for _, p := range aurResults {
 					localVer := foreign[p.Name]
-					if pacman.IsNewerVersion(localVer, p.Version) {
-						if query == "" || strings.Contains(strings.ToLower(p.Name), query) {
-							entries = append(entries, listEntry{
-								Name:    p.Name,
-								Version: localVer,
-								Source:  "AUR",
-								Detail:  fmt.Sprintf("upgradable to %s", p.Version),
-							})
+					wg.Add(1)
+					go func(pkg resolve.AURResult, lVer string) {
+						defer wg.Done()
+						if pacman.IsNewerVersion(lVer, pkg.Version) {
+							if query == "" || strings.Contains(strings.ToLower(pkg.Name), query) {
+								mu.Lock()
+								entries = append(entries, listEntry{
+									Name:    pkg.Name,
+									Version: lVer,
+									Source:  "AUR",
+									Detail:  fmt.Sprintf("upgradable to %s", pkg.Version),
+								})
+								mu.Unlock()
+							}
 						}
-					}
+					}(p, localVer)
 				}
+				wg.Wait()
 			}
 		}
 
@@ -114,9 +145,11 @@ func listPackages(cmd *cobra.Command, args []string) {
 		if listAllFlag {
 			subFlag = "-Qm"
 		}
-		out, err := exec.Command("pacman", subFlag).Output()
-		if err == nil {
-			lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		out, err := runPacmanQuery(subFlag)
+		if err != nil {
+			fmt.Printf("Warning: error querying foreign packages: %v\n", err)
+		} else {
+			lines := strings.Split(strings.TrimSpace(out), "\n")
 			for _, line := range lines {
 				parts := strings.Fields(line)
 				if len(parts) >= 2 {
@@ -138,9 +171,11 @@ func listPackages(cmd *cobra.Command, args []string) {
 		if listAllFlag {
 			subFlag = "-Qn"
 		}
-		out, err := exec.Command("pacman", subFlag).Output()
-		if err == nil {
-			lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		out, err := runPacmanQuery(subFlag)
+		if err != nil {
+			fmt.Printf("Warning: error querying official packages: %v\n", err)
+		} else {
+			lines := strings.Split(strings.TrimSpace(out), "\n")
 			for _, line := range lines {
 				parts := strings.Fields(line)
 				if len(parts) >= 2 {
@@ -163,9 +198,11 @@ func listPackages(cmd *cobra.Command, args []string) {
 		if listAllFlag {
 			subFlag = "-Q"
 		}
-		out, err := exec.Command("pacman", subFlag).Output()
-		if err == nil {
-			lines := strings.Split(strings.TrimSpace(string(out)), "\n")
+		out, err := runPacmanQuery(subFlag)
+		if err != nil {
+			fmt.Printf("Warning: error querying installed packages: %v\n", err)
+		} else {
+			lines := strings.Split(strings.TrimSpace(out), "\n")
 			for _, line := range lines {
 				parts := strings.Fields(line)
 				if len(parts) >= 2 {

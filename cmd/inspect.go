@@ -18,16 +18,16 @@ var (
 	inspectAURFlag      bool
 )
 
-func inspect(cmd *cobra.Command, args []string) {
+func inspect(cmd *cobra.Command, args []string) error {
 	if len(args) == 0 {
 		fmt.Println("Please provide a package name to inspect.")
-		return
+		return nil
 	}
 
 	pkgName := args[0]
 	if !ui.IsValidPkgName(pkgName) {
 		fmt.Printf("Error: invalid package name format: %s\n", pkgName)
-		return
+		return fmt.Errorf("invalid package name format: %s", pkgName)
 	}
 
 	sourceFilter := strings.ToLower(strings.TrimSpace(inspectFromFlag))
@@ -43,7 +43,7 @@ func inspect(cmd *cobra.Command, args []string) {
 		if aurErr == nil {
 			if inspectRawFlag {
 				fmt.Print(pkgbuildContent)
-				return
+				return nil
 			}
 
 			parsed := aur.ParsePKGBUILD(pkgbuildContent)
@@ -91,30 +91,33 @@ func inspect(cmd *cobra.Command, args []string) {
 			for i, line := range lines {
 				fmt.Printf("%4d | %s\n", i+1, line)
 			}
-			return
+			return nil
 		}
 	}
 
 	// 2. Official repository inspection unless restricted to AUR
 	if sourceFilter != "aur" {
-		pacmanPkg, pacmanErr := pacman.SearchPacmanExact(pkgName)
-		if pacmanErr == nil && pacmanPkg != nil {
-			fmt.Printf("\n=== Official Repository Inspection: %s ===\n", pacmanPkg.Name)
-			fmt.Printf("Repository  : %s\n", pacmanPkg.Repository)
-			fmt.Printf("Version     : %s\n", pacmanPkg.Version)
-			fmt.Printf("Description : %s\n", pacmanPkg.Description)
-			fmt.Println("Source      : Official Arch Linux binary repository")
-			fmt.Println("\nPackage diagnostics:")
-
-			out, err := exec.Command("pacman", "-Si", pkgName).Output()
-			if err == nil {
+		out, err := exec.Command("pacman", "-Si", pkgName).Output()
+		if err == nil {
+			if pacmanPkg := pacman.ParsePacmanExactOutput(string(out), pkgName); pacmanPkg != nil {
+				fmt.Printf("\n=== Official Repository Inspection: %s ===\n", pacmanPkg.Name)
+				fmt.Printf("Repository  : %s\n", pacmanPkg.Repository)
+				fmt.Printf("Version     : %s\n", pacmanPkg.Version)
+				fmt.Printf("Description : %s\n", pacmanPkg.Description)
+				fmt.Println("Source      : Official Arch Linux binary repository")
+				fmt.Println("\nPackage diagnostics:")
 				fmt.Println(strings.TrimSpace(string(out)))
+				return nil
 			}
-			return
+		} else if exitErr, ok := err.(*exec.ExitError); !ok || exitErr.ExitCode() != 1 {
+			// Exit code 1 simply means "package not found"; anything else is a real error.
+			fmt.Printf("Warning: error querying pacman: %v\n", err)
+			return err
 		}
 	}
 
 	fmt.Printf("Package \"%s\" was not found in specified sources.\n", pkgName)
+	return fmt.Errorf("package %q not found in specified sources", pkgName)
 }
 
 var inspectCmd = &cobra.Command{
@@ -125,12 +128,12 @@ var inspectCmd = &cobra.Command{
 in the Arch User Repository (AUR) without downloading or executing it.
 
 For official packages, it displays verified package metadata and build diagnostics from pacman.`,
-	Run: inspect,
+	RunE: inspect,
 }
 
 func init() {
 	inspectCmd.Flags().BoolVarP(&inspectRawFlag, "raw", "r", false, "output raw PKGBUILD text directly (suitable for piping)")
-	inspectCmd.Flags().StringVar(&inspectFromFlag, "from", "any", "filter source: 'official' or 'aur'")
+	inspectCmd.Flags().StringVar(&inspectFromFlag, "from", "any", "filter source: 'official' (or 'repo') or 'aur'")
 	inspectCmd.Flags().BoolVarP(&inspectOfficialFlag, "official", "O", false, "inspect only official repositories")
 	inspectCmd.Flags().BoolVarP(&inspectAURFlag, "aur", "A", false, "inspect only the Arch User Repository")
 	rootCmd.AddCommand(inspectCmd)
