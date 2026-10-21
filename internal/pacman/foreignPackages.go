@@ -31,6 +31,9 @@ func GetForeignPackages() (map[string]string, error) {
 }
 
 func IsNewerVersion(localVer, aurVer string) bool {
+	if localVer == "" || aurVer == "" || localVer == aurVer {
+		return false
+	}
 	cmd := exec.Command("vercmp", aurVer, localVer)
 	output, err := cmd.Output()
 	if err != nil {
