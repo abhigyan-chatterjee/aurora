@@ -41,22 +41,9 @@ jobs:
         run: |
           set -euo pipefail
 
-          # Find the latest semantic version tag vX.Y.Z; fallback to Version in cmd/root.go or 0.3.0
+          # Find the latest semantic version tag vX.Y.Z; fallback to Version in cmd/root.go
+          CODE_VER=$(grep -Eo 'Version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' cmd/root.go | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' || echo "0.4.0")
           LATEST_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1 || true)
-
-          if [ -z "$LATEST_TAG" ]; then
-            CODE_VER=$(grep -Eo 'Version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' cmd/root.go | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' || echo "0.3.0")
-            BASE_VER="$CODE_VER"
-            LAST_ANY_TAG=$(git describe --tags --abbrev=0 2>/dev/null || true)
-            if [ -n "$LAST_ANY_TAG" ]; then
-              RANGE="${LAST_ANY_TAG}..HEAD"
-            else
-              RANGE="HEAD"
-            fi
-          else
-            BASE_VER="${LATEST_TAG#v}"
-            RANGE="${LATEST_TAG}..HEAD"
-          fi
 
           # If HEAD is already tagged with a semver release, skip
           HEAD_TAG=$(git tag --points-at HEAD 'v[0-9]*.[0-9]*.[0-9]*' | head -n 1 || true)
@@ -65,6 +52,21 @@ jobs:
             echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+
+          # If cmd/root.go explicitly declares a version that has NOT been tagged yet,
+          # release that exact version directly without double-bumping it.
+          if [ -z "$LATEST_TAG" ] || ( [ -z "$(git tag -l "v${CODE_VER}")" ] && [ "$(printf '%s\n%s\n' "${LATEST_TAG#v}" "$CODE_VER" | sort -V | tail -n 1)" = "$CODE_VER" ] ); then
+            NEXT_VER="$CODE_VER"
+            NEXT_TAG="v${NEXT_VER}"
+            echo "Using untagged explicit version from cmd/root.go: $NEXT_TAG"
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            echo "version=$NEXT_VER" >> "$GITHUB_OUTPUT"
+            echo "tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          BASE_VER="${LATEST_TAG#v}"
+          RANGE="${LATEST_TAG}..HEAD"
 
           IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VER"
 
@@ -96,14 +98,7 @@ jobs:
               ;;
           esac
 
-          # If cmd/root.go explicitly declares a higher version than computed, honor it
-          CODE_VER=$(grep -Eo 'Version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' cmd/root.go | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' || echo "0.0.0")
           NEXT_VER="${MAJOR}.${MINOR}.${PATCH}"
-          HIGHEST=$(printf '%s\n%s\n' "$NEXT_VER" "$CODE_VER" | sort -V | tail -n 1)
-          if [ "$HIGHEST" = "$CODE_VER" ] && [ -z "$(git tag -l "v${CODE_VER}")" ]; then
-            NEXT_VER="$CODE_VER"
-          fi
-
           NEXT_TAG="v${NEXT_VER}"
           echo "Computed bump: $BUMP ($BASE_VER -> $NEXT_VER)"
           echo "skip=false" >> "$GITHUB_OUTPUT"
