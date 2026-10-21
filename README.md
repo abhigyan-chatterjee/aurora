@@ -37,10 +37,11 @@ v0.3 completes the roadmap through v0.6, delivering a unified, powerful, and int
 | `aurora info <package...> [--from]` | Show detailed package information and source resolution |
 | `aurora install <package...> [--from] [-i]` | Install packages in batch with preview, confirmation, and optional PKGBUILD review |
 | `aurora remove <package...>` | Remove packages safely with orphan cleanup (`-Rns`) |
-| `aurora update` | Check AUR updates, then perform full system upgrade in 1 combined prompt |
+| `aurora update` | Perform full system upgrade (`-Syu`), then rebuild outdated AUR packages |
 | `aurora autoremove` | Scan and remove unneeded orphan dependencies (apt-style) |
 | `aurora list [query] [--flags]` | List packages by category (`--installed`, `--upgradable`, `--orphans`, `--foreign`) |
 | `aurora clean [--dry-run] [--all]` | Reclaim disk space by purging AUR build artifacts and package caches |
+| `aurora selfupdate [--check] [--force]` | Update Aurora itself from GitHub Releases (or `go install` fallback) |
 
 ### Global Flags
 
