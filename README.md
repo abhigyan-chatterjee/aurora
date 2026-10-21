@@ -1,23 +1,29 @@
-# Aurora v0.3 🎉
+# Aurora v0.4 🎉
 
 **Aurora** is a modern package workflow assistant for Arch-based Linux that combines the raw AUR power of **Paru** with the memorable simplicity of **apt**. It prioritizes official repositories over the AUR, explains every operation in plain English, and keeps your system safe and clean.
 
 ---
 
-## What's New in v0.3
+## What's New in v0.4
 
-v0.3 completes the roadmap through v0.6, delivering a unified, powerful, and intuitive CLI:
+v0.4 adds self-updating, library-safe system upgrade ordering, chunked AUR RPC queries, and stricter error propagation across all commands:
+
+### 🔄 Self-Update & Reliability (v0.4)
+- **Self-Update (`aurora selfupdate`)** — Checks GitHub Releases for newer versions, verifies the binary's SHA256 digest, and atomically updates the `aurora` executable (with `go install` fallback).
+- **Library-Safe Upgrade Order (`aurora update`)** — Runs `sudo pacman -Syu` *first* before rebuilding outdated AUR packages so AUR builds link against the newest system libraries (and aborts AUR rebuilds if the system upgrade fails).
+- **Large-System AUR Batching** — Automatically chunks AUR RPC `info` queries (150 packages per request) while preserving partial results and checking versions concurrently.
+- **Explicit Error Propagation & Root Guard** — Blocks accidental `sudo` execution when building AUR packages (`makepkg` requirement) and returns non-zero exit codes on command failures for reliable scripting.
 
 ### ⚡ Paru-Style Power & Source Intelligence
 - **PKGBUILD Inspection (`aurora inspect <pkg>`)** — Fetch and review PKGBUILD build recipes directly from AUR cgit before building or downloading.
 - **Pre-Build Review (`aurora install --inspect <pkg>`)** — Inspect PKGBUILD scripts interactively prior to compiling AUR software with `makepkg`.
-- **Source Filtering (`--from official|aur`, `-O`, `-A`)** — Restrict operations cleanly to official repositories or AUR across `install`, `search`, and `info`.
+- **Source Filtering (`--from official|repo|aur`, `-O`, `-A`)** — Restrict operations cleanly to official repositories or AUR across `install`, `search`, `inspect`, and `info`.
 - **Concurrent Lookups (Goroutines)** — Parallel queries across pacman and AUR cut search and resolution latency in half.
 
 ### 🐧 Apt-Style Simplicity & Lifecycle Management
 - **`aurora autoremove`** — Discovers and removes leftover orphan dependencies (`pacman -Qtdq`) safely with `sudo pacman -Rns --noconfirm`.
-- **`aurora list`** — Apt-style package query with filters: `--installed`, `--upgradable`, `--orphans`, `--official`, `--foreign` / `--aur`.
-- **`aurora clean`** — Purges temporary AUR build artifacts in `~/.cache/aurora` and cleans pacman cache with `--dry-run` inspection.
+- **`aurora list`** — Apt-style package query with filters: `--upgradable`, `--orphans`, `--official`, `--foreign` / `--aur`, and `--all`.
+- **`aurora clean`** — Purges temporary AUR build artifacts in `~/.cache/aurora` (`--cache`) or cleans pacman's cache (`--pacman`, `--all`) with `--dry-run` inspection.
 
 ### 📚 Teaching Mode & Friction Reduction
 - **`aurora explain [topic]`** — Plain-English concept explorer for Arch Linux package management (`-Syu`, `-Rns`, `aur`, `pkgbuild`, `makepkg`, `partial-upgrades`, `orphans`).
@@ -39,15 +45,15 @@ v0.3 completes the roadmap through v0.6, delivering a unified, powerful, and int
 | `aurora remove <package...>` | Remove packages safely with orphan cleanup (`-Rns`) |
 | `aurora update` | Perform full system upgrade (`-Syu`), then rebuild outdated AUR packages |
 | `aurora autoremove` | Scan and remove unneeded orphan dependencies (apt-style) |
-| `aurora list [query] [--flags]` | List packages by category (`--installed`, `--upgradable`, `--orphans`, `--foreign`) |
-| `aurora clean [--dry-run] [--all]` | Reclaim disk space by purging AUR build artifacts and package caches |
+| `aurora list [query] [--flags]` | List packages by category (`--upgradable`, `--orphans`, `--official`, `--foreign`, `--all`) |
+| `aurora clean [--dry-run] [--pacman] [--all]` | Reclaim disk space by purging AUR build artifacts and/or pacman package caches |
 | `aurora selfupdate [--check] [--force]` | Update Aurora itself from GitHub Releases (or `go install` fallback) |
 
 ### Global Flags
 
 - **`-y, --yes`**: Skip Aurora's confirmation prompts (pacman/sudo still prompt).
 - **`-c, --concise`**: Enable concise output mode (suppress extra teaching explanations and notes).
-- **`-v, --version`**: Show Aurora version (`0.3.0`).
+- **`-v, --version`**: Show Aurora version (`0.4.0`).
 
 ---
 
@@ -104,7 +110,8 @@ aurora info neovim          # Detailed package details
 # Installation & Upgrades
 aurora install neovim git   # Install multiple packages with 1 confirmation
 aurora install yay -i       # Review PKGBUILD before building from AUR
-aurora update               # Update AUR packages + full system upgrade
+aurora update               # Full system upgrade (-Syu), then rebuild outdated AUR packages
+aurora selfupdate           # Update Aurora itself to the latest GitHub Release
 
 # System Maintenance (Apt-style)
 aurora autoremove           # Remove unused orphan dependencies
@@ -112,6 +119,7 @@ aurora list --upgradable    # List packages with available updates
 aurora list --foreign       # List installed AUR packages
 aurora clean --dry-run      # Check how much cache space can be reclaimed
 aurora clean                # Purge ~/.cache/aurora build artifacts
+aurora clean --pacman       # Prune uninstalled packages from pacman cache
 aurora remove neovim        # Safe removal with dependency cleanup
 ```
 
@@ -119,6 +127,12 @@ aurora remove neovim        # Safe removal with dependency cleanup
 
 ## Roadmap
 
+- **v0.4 — Self-Update, Safe Upgrade Ordering & Hardened CLI** (Complete!)
+  - Self-updater (`aurora selfupdate [--check] [--force]`) with SHA256 digest verification and `go install` fallback
+  - Paru-style `update` ordering (`pacman -Syu` runs first before AUR rebuilds)
+  - 150-package chunked AUR RPC queries and concurrent `vercmp` checks
+  - Isolated `clean` scope flags (`--cache`, `--pacman`, `--all`), non-root AUR build guard, and `RunE` exit codes
+  - Automated Arch Linux CI and semantic release pipeline (`staging` -> `main`)
 - **v0.3 — Paru Power + Apt Simplicity** (Complete!)
   - Teaching mode (`explain` command, concise mode)
   - Concurrency (parallel lookups with goroutines)
