@@ -50,3 +50,65 @@ func TestHumanSize(t *testing.T) {
 		}
 	}
 }
+
+func TestCleanScope(t *testing.T) {
+	tests := []struct {
+		name       string
+		cacheFlag  bool
+		pacmanFlag bool
+		allFlag    bool
+		wantAUR    bool
+		wantPacman bool
+	}{
+		{
+			name:       "default (no flags) cleans AUR cache only",
+			cacheFlag:  false,
+			pacmanFlag: false,
+			allFlag:    false,
+			wantAUR:    true,
+			wantPacman: false,
+		},
+		{
+			name:       "--pacman cleans pacman cache only",
+			cacheFlag:  false,
+			pacmanFlag: true,
+			allFlag:    false,
+			wantAUR:    false,
+			wantPacman: true,
+		},
+		{
+			name:       "--cache cleans AUR cache only",
+			cacheFlag:  true,
+			pacmanFlag: false,
+			allFlag:    false,
+			wantAUR:    true,
+			wantPacman: false,
+		},
+		{
+			name:       "--all cleans both caches",
+			cacheFlag:  false,
+			pacmanFlag: false,
+			allFlag:    true,
+			wantAUR:    true,
+			wantPacman: true,
+		},
+		{
+			name:       "--cache and --pacman together cleans both",
+			cacheFlag:  true,
+			pacmanFlag: true,
+			allFlag:    false,
+			wantAUR:    true,
+			wantPacman: true,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			gotAUR, gotPacman := cleanScope(tc.cacheFlag, tc.pacmanFlag, tc.allFlag)
+			if gotAUR != tc.wantAUR || gotPacman != tc.wantPacman {
+				t.Errorf("cleanScope(%v, %v, %v) = (%v, %v), want (%v, %v)",
+					tc.cacheFlag, tc.pacmanFlag, tc.allFlag, gotAUR, gotPacman, tc.wantAUR, tc.wantPacman)
+			}
+		})
+	}
+}

@@ -23,7 +23,10 @@ func dirSize(path string) (int64, error) {
 	var size int64
 	err := filepath.Walk(path, func(_ string, info os.FileInfo, err error) error {
 		if err != nil {
-			return nil
+			if os.IsNotExist(err) {
+				return nil
+			}
+			return err
 		}
 		if !info.IsDir() {
 			size += info.Size()
@@ -46,6 +49,18 @@ func humanSize(bytes int64) string {
 	return fmt.Sprintf("%.2f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
+// cleanScope decides which caches to clean for a given flag combination.
+// Default (no flags): Aurora's AUR build cache only.
+func cleanScope(cacheFlag, pacmanFlag, allFlag bool) (doAUR, doPacman bool) {
+	if allFlag {
+		return true, true
+	}
+	if !cacheFlag && !pacmanFlag {
+		return true, false
+	}
+	return cacheFlag, pacmanFlag
+}
+
 func clean(cmd *cobra.Command, args []string) {
 	reader := bufio.NewReader(os.Stdin)
 
@@ -58,17 +73,24 @@ func clean(cmd *cobra.Command, args []string) {
 	aurCacheDir := filepath.Join(usr.HomeDir, ".cache", "aurora")
 	pacmanCacheDir := "/var/cache/pacman/pkg"
 
-	doAUR := cleanCacheFlag || cleanAllFlag || (!cleanPacmanFlag && !cleanAllFlag)
-	doPacman := cleanPacmanFlag || cleanAllFlag
+	doAUR, doPacman := cleanScope(cleanCacheFlag, cleanPacmanFlag, cleanAllFlag)
 
 	var aurSize int64
 	if doAUR {
-		aurSize, _ = dirSize(aurCacheDir)
+		var err error
+		aurSize, err = dirSize(aurCacheDir)
+		if err != nil && !os.IsNotExist(err) {
+			fmt.Printf("Warning: error reading AUR cache size: %v\n", err)
+		}
 	}
 
 	var pacmanSize int64
 	if doPacman {
-		pacmanSize, _ = dirSize(pacmanCacheDir)
+		var err error
+		pacmanSize, err = dirSize(pacmanCacheDir)
+		if err != nil && !os.IsNotExist(err) {
+			fmt.Printf("Warning: error reading pacman cache size: %v\n", err)
+		}
 	}
 
 	if cleanDryRunFlag {
@@ -125,13 +147,14 @@ It can also trigger 'sudo pacman -Sc' to prune old uninstalled packages from pac
 
 Examples:
   aurora clean            # Clean AUR build cache (~/.cache/aurora)
+  aurora clean --pacman   # Clean pacman's package cache only
   aurora clean --dry-run  # Check how much disk space can be reclaimed
   aurora clean --all      # Clean both AUR build cache and pacman package cache`,
 	Run: clean,
 }
 
 func init() {
-	cleanCmd.Flags().BoolVar(&cleanCacheFlag, "cache", true, "clean Aurora's AUR build cache (~/.cache/aurora)")
+	cleanCmd.Flags().BoolVar(&cleanCacheFlag, "cache", false, "clean Aurora's AUR build cache (~/.cache/aurora); default when no flags are given")
 	cleanCmd.Flags().BoolVar(&cleanPacmanFlag, "pacman", false, "clean uninstalled packages from pacman's cache (sudo pacman -Sc)")
 	cleanCmd.Flags().BoolVarP(&cleanAllFlag, "all", "a", false, "clean both AUR build cache and pacman package cache")
 	cleanCmd.Flags().BoolVarP(&cleanDryRunFlag, "dry-run", "n", false, "show reclaimable disk space without deleting anything")
