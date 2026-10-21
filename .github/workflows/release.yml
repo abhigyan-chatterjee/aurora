@@ -1,0 +1,127 @@
+name: Automated Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Tag & Publish GitHub Release
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Install Go, Git, pacman-contrib, and GitHub CLI
+        run: |
+          pacman -Syu --noconfirm go git pacman-contrib base-devel github-cli
+
+      - name: Checkout repository with full history and tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Run go vet & test suite
+        run: |
+          go vet ./...
+          go test -v -race ./...
+
+      - name: Compute next semantic version
+        id: semver
+        run: |
+          set -euo pipefail
+
+          # Find the latest semantic version tag vX.Y.Z; fallback to Version in cmd/root.go or 0.3.0
+          LATEST_TAG=$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1 || true)
+
+          if [ -z "$LATEST_TAG" ]; then
+            CODE_VER=$(grep -Eo 'Version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' cmd/root.go | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' || echo "0.3.0")
+            BASE_VER="$CODE_VER"
+            RANGE="HEAD~1..HEAD"
+          else
+            BASE_VER="${LATEST_TAG#v}"
+            RANGE="${LATEST_TAG}..HEAD"
+          fi
+
+          # If HEAD is already tagged with a semver release, skip
+          HEAD_TAG=$(git tag --points-at HEAD 'v[0-9]*.[0-9]*.[0-9]*' | head -n 1 || true)
+          if [ -n "$HEAD_TAG" ]; then
+            echo "HEAD is already tagged at $HEAD_TAG; skipping release."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$BASE_VER"
+
+          # Inspect commit messages since last tag:
+          # - major! / feat! / BREAKING CHANGE / [major] -> Major bump (v.0.0)
+          # - feat / [minor]                             -> Minor bump (x.v.0)
+          # - otherwise (fix, chore, refactor, etc.)     -> Patch bump (x.x.v)
+          COMMITS=$(git log "$RANGE" --pretty=format:"%s%n%b" 2>/dev/null || git log -1 --pretty=format:"%s%n%b")
+
+          BUMP="patch"
+          if echo "$COMMITS" | grep -Eq '(^[a-zA-Z]+(\([^)]+\))?!:|BREAKING CHANGE|\[major\]|^major(\([^)]+\))?:)'; then
+            BUMP="major"
+          elif echo "$COMMITS" | grep -Eq '(^feat(\([^)]+\))?:|\[minor\])'; then
+            BUMP="minor"
+          fi
+
+          case "$BUMP" in
+            major)
+              MAJOR=$((MAJOR + 1))
+              MINOR=0
+              PATCH=0
+              ;;
+            minor)
+              MINOR=$((MINOR + 1))
+              PATCH=0
+              ;;
+            patch)
+              PATCH=$((PATCH + 1))
+              ;;
+          esac
+
+          # If cmd/root.go explicitly declares a higher version than computed, honor it
+          CODE_VER=$(grep -Eo 'Version\s*=\s*"[0-9]+\.[0-9]+\.[0-9]+"' cmd/root.go | grep -Eo '[0-9]+\.[0-9]+\.[0-9]+' || echo "0.0.0")
+          NEXT_VER="${MAJOR}.${MINOR}.${PATCH}"
+          HIGHEST=$(printf '%s\n%s\n' "$NEXT_VER" "$CODE_VER" | sort -V | tail -n 1)
+          if [ "$HIGHEST" = "$CODE_VER" ] && [ -z "$(git tag -l "v${CODE_VER}")" ]; then
+            NEXT_VER="$CODE_VER"
+          fi
+
+          NEXT_TAG="v${NEXT_VER}"
+          echo "Computed bump: $BUMP ($BASE_VER -> $NEXT_VER)"
+          echo "skip=false" >> "$GITHUB_OUTPUT"
+          echo "version=$NEXT_VER" >> "$GITHUB_OUTPUT"
+          echo "tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Build release binary
+        if: steps.semver.outputs.skip != 'true'
+        run: |
+          mkdir -p dist
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
+            -trimpath \
+            -ldflags="-s -w -X github.com/abhigyan-chatterjee/aurora/cmd.Version=${{ steps.semver.outputs.version }}" \
+            -o dist/aurora .
+          cd dist
+          sha256sum aurora > aurora.sha256
+
+      - name: Create Git tag and publish GitHub Release
+        if: steps.semver.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.semver.outputs.tag }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+          gh release create "$TAG" \
+            dist/aurora \
+            dist/aurora.sha256 \
+            --title "Aurora $TAG" \
+            --generate-notes

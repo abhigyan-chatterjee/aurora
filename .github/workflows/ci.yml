@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - staging
+      - Staging
+      - main
+  pull_request:
+    branches:
+      - staging
+      - Staging
+      - main
+
+jobs:
+  verify:
+    name: Build, Vet & Test
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:latest
+    steps:
+      - name: Install Go, Git, and pacman-contrib
+        run: |
+          pacman -Syu --noconfirm go git pacman-contrib base-devel
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check formatting (gofmt)
+        run: |
+          unformatted=$(gofmt -l .)
+          if [ -n "$unformatted" ]; then
+            echo "The following files are not gofmt'd:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Run go vet
+        run: go vet ./...
+
+      - name: Build binary
+        run: go build -v -o build/aurora .
+
+      - name: Run tests with race detector
+        run: go test -v -race ./...
