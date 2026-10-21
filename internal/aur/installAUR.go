@@ -22,6 +22,10 @@ func isValidPackageName(name string) bool {
 }
 
 func InstallAUR(packageName string) error {
+	if os.Geteuid() == 0 {
+		return fmt.Errorf("running Aurora as root (e.g. via sudo) is not allowed when building AUR packages; makepkg requires a non-root user")
+	}
+
 	if !isValidPackageName(packageName) {
 		return fmt.Errorf("invalid package name: %s", packageName)
 	}
