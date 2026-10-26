@@ -173,9 +173,7 @@ func listPackages(cmd *cobra.Command, args []string) error {
 	if jsonFlag {
 		out := make([]listEntryJSON, 0, len(entries))
 		for _, e := range entries {
-			out = append(out, listEntryJSON{
-				Name: e.Name, Version: e.Version, Source: e.Source, Detail: e.Detail,
-			})
+			out = append(out, listEntryJSON(e))
 		}
 		if err := ui.EmitJSON(out); err != nil {
 			return err
@@ -214,7 +212,7 @@ Examples:
 
 func init() {
 	listCmd.Flags().BoolVarP(&listOfficialFlag, "official", "o", false, "list only packages from official Arch repositories")
-	listCmd.Flags().BoolVarP(&listAURFlag, "foreign", "m", false, "list only foreign / AUR packages")
+	listCmd.Flags().BoolVarP(&listAURFlag, "foreign", "m", false, "list only foreign / AUR packages (alias: --aur)")
 	// --aur is an alias for --foreign, registered on the same variable so the
 	// two flags cannot disagree. Registering two BoolVars on one variable let
 	// `--aur=false` clobber an earlier `--foreign`.

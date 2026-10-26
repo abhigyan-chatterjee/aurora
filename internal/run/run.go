@@ -17,6 +17,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 	"sync"
 	"time"
 )
@@ -179,22 +180,14 @@ func Parallel(n, workers int, fn func(i int) error) error {
 	return firstErr
 }
 
+// formatStderr keeps an error message readable when it is embedded in another
+// error. The limit is in bytes, so a multi-byte character at the boundary may be
+// split; that is cosmetic in a diagnostic and not worth a rune scan.
 func formatStderr(s string) string {
-	s = trimSpace(s)
+	s = strings.TrimSpace(s)
 	const max = 400
 	if len(s) > max {
 		return s[:max] + "..."
 	}
 	return s
-}
-
-func trimSpace(s string) string {
-	start, end := 0, len(s)
-	for start < end && (s[start] == ' ' || s[start] == '\n' || s[start] == '\t' || s[start] == '\r') {
-		start++
-	}
-	for end > start && (s[end-1] == ' ' || s[end-1] == '\n' || s[end-1] == '\t' || s[end-1] == '\r') {
-		end--
-	}
-	return s[start:end]
 }

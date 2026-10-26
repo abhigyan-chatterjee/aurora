@@ -29,6 +29,10 @@ func TestRootCmd_Flags(t *testing.T) {
 }
 
 func TestRootCmd_PreRunFailsWithoutPacman(t *testing.T) {
+	// Keep PreRunE from reading whatever config file the developer happens to
+	// have: a malformed one would fail this test for the wrong reason.
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+
 	origPath := os.Getenv("PATH")
 	t.Cleanup(func() {
 		_ = os.Setenv("PATH", origPath)
