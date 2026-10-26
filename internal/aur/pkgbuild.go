@@ -1,6 +1,7 @@
 package aur
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -8,6 +9,17 @@ import (
 	"strings"
 	"time"
 )
+
+// ErrPackageNotFound reports that the AUR has no PKGBUILD for this name.
+//
+// It is a sentinel so callers can tell "this package does not exist" from
+// "the AUR could not be reached", which need different messages and different
+// fallbacks.
+var ErrPackageNotFound = errors.New("package not found in the AUR")
+
+// aurCgitBase is the PKGBUILD endpoint. It is a variable so tests can point it
+// at a local server.
+var aurCgitBase = "https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD"
 
 // PKGBUILDInfo holds metadata extracted from a PKGBUILD.
 //
@@ -42,7 +54,7 @@ func FetchPKGBUILD(packageName string) (string, error) {
 		return "", fmt.Errorf("invalid package name: %s", packageName)
 	}
 
-	cgitURL := fmt.Sprintf("https://aur.archlinux.org/cgit/aur.git/plain/PKGBUILD?h=%s", url.QueryEscape(packageName))
+	cgitURL := fmt.Sprintf("%s?h=%s", aurCgitBase, url.QueryEscape(packageName))
 
 	client := &http.Client{Timeout: 15 * time.Second}
 	req, err := newAURRequest(cgitURL)
@@ -57,7 +69,7 @@ func FetchPKGBUILD(packageName string) (string, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return "", fmt.Errorf("PKGBUILD not found for package %q", packageName)
+		return "", fmt.Errorf("%w: %s", ErrPackageNotFound, packageName)
 	}
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("received HTTP status %s when fetching PKGBUILD", resp.Status)
@@ -70,7 +82,7 @@ func FetchPKGBUILD(packageName string) (string, error) {
 
 	content := string(bodyBytes)
 	if strings.TrimSpace(content) == "" {
-		return "", fmt.Errorf("PKGBUILD for %q is empty", packageName)
+		return "", fmt.Errorf("%w: %s has an empty PKGBUILD", ErrPackageNotFound, packageName)
 	}
 
 	return content, nil
@@ -241,6 +253,12 @@ func isIdentifier(s string) bool {
 // braceDelta counts net brace nesting on a line, ignoring braces inside quotes.
 // It is how function bodies are skipped: anything after an unbalanced `{` is
 // shell code rather than a package declaration.
+//
+// Known limitation: braces inside an unquoted here-document are counted, so a
+// here-document whose body has unbalanced braces can end the body early and let
+// a following assignment be read as metadata. Real PKGBUILDs keep braces
+// balanced in here-documents (JSON, C, shell all balance), so this is left as a
+// documented edge rather than a tokenizer that parses shell.
 func braceDelta(line string) int {
 	delta := 0
 	var quote byte

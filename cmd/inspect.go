@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"strings"
 
@@ -54,9 +55,11 @@ func inspect(cmd *cobra.Command, args []string) error {
 	}
 
 	if filter != filterOfficial {
-		if found, err := inspectAUR(pkgName); err != nil {
+		found, err := inspectAUR(pkgName)
+		if err != nil {
 			return err
-		} else if found {
+		}
+		if found {
 			return nil
 		}
 	}
@@ -79,7 +82,13 @@ func inspect(cmd *cobra.Command, args []string) error {
 func inspectAUR(pkgName string) (bool, error) {
 	content, err := aur.FetchPKGBUILD(pkgName)
 	if err != nil {
-		return false, nil
+		// "Not in the AUR" falls through to the official lookup. Anything else
+		// is reported: telling the user a package does not exist when the AUR
+		// was simply unreachable sends them looking for the wrong problem.
+		if errors.Is(err, aur.ErrPackageNotFound) {
+			return false, nil
+		}
+		return false, fmt.Errorf("could not fetch the PKGBUILD from the AUR: %w", err)
 	}
 
 	parsed := aur.ParsePKGBUILD(content)
