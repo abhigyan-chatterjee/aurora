@@ -149,8 +149,9 @@ func clean(cmd *cobra.Command, args []string) error {
 var cleanCmd = &cobra.Command{
 	Use:   "clean",
 	Short: "Clean AUR build files and package caches",
-	Long: `Clean purges Aurora's cloned build files and downloaded AUR repositories in
-~/.cache/aurora. It can also prune uninstalled packages from pacman's cache.
+	Long: `Clean purges Aurora's cloned build files and downloaded AUR repositories from the
+build cache (default ~/.cache/aurora, movable with cache_dir in the config file).
+It can also prune uninstalled packages from pacman's cache.
 
 Examples:
   aurora clean            # clean the AUR build cache

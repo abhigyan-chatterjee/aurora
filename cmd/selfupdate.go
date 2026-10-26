@@ -415,10 +415,11 @@ var selfUpdateCmd = &cobra.Command{
 	Use:     "selfupdate",
 	Aliases: []string{"self-update"},
 	Short:   "Update Aurora itself to the latest release",
-	Long: `Checks GitHub Releases for a newer Aurora, verifies the binary's SHA256 digest,
-and replaces the current executable with the build for this machine's architecture.
+	Long: `Checks GitHub Releases for a newer Aurora, selects the build for this machine's
+architecture, verifies its SHA256 digest, and replaces the current executable.
 
-If no matching release binary is reachable, falls back to
+A download that cannot be verified against a digest is refused, not installed. If no
+matching release binary is available, Aurora falls back to
 'go install github.com/abhigyan-chatterjee/aurora@latest'.
 
 Examples:

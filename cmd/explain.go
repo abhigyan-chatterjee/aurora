@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"strings"
 
@@ -144,6 +145,8 @@ func explain(cmd *cobra.Command, args []string) error {
 		case "--quiet", "-q":
 			quietFlag = true
 			ui.Quiet = true
+		case "--json":
+			return fmt.Errorf("--json is not supported by explain")
 		default:
 			cleanArgs = append(cleanArgs, arg)
 		}
@@ -207,6 +210,9 @@ var explainCmd = &cobra.Command{
 	Use:                "explain [topic]",
 	Short:              "Explains Arch Linux package concepts, flags, and workflows in plain English",
 	DisableFlagParsing: true,
+	// The command parses its own flags so topics like -Syu are not eaten by the
+	// flag parser, so cobra must not advertise [flags] in the usage line.
+	DisableFlagsInUseLine: true,
 	Long: `Teaching mode command that provides plain-English explanations of Arch Linux
 concepts, pacman flags (-Syu, -Rns), the AUR build process, and safety best practices.
 

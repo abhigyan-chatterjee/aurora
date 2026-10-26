@@ -89,7 +89,7 @@ func needsPacman(cmd *cobra.Command) bool {
 func init() {
 	rootCmd.PersistentFlags().BoolVarP(&yesFlag, "yes", "y", false, "skip Aurora's confirmation prompts (pacman runs with --noconfirm)")
 	rootCmd.PersistentFlags().BoolVarP(&conciseFlag, "concise", "c", false, "enable concise output mode (suppress teaching explanations and notes)")
-	rootCmd.PersistentFlags().BoolVarP(&quietFlag, "quiet", "q", false, "suppress informational output; warnings and errors are still printed")
+	rootCmd.PersistentFlags().BoolVarP(&quietFlag, "quiet", "q", false, "suppress informational output; warnings, errors and the plan shown before a confirmation are still printed")
 	rootCmd.PersistentFlags().BoolVar(&jsonFlag, "json", false, "emit machine-readable JSON instead of prose (search, info, list, inspect, outdated, doctor)")
 
 	// Shell completion. Cobra registers a `completion` command automatically

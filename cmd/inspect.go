@@ -222,10 +222,11 @@ var inspectCmd = &cobra.Command{
 	Use:     "inspect <package>",
 	Aliases: []string{"pkgbuild", "cat"},
 	Short:   "Inspect the PKGBUILD script and metadata of an AUR or official package",
-	Long: `Inspect fetches and displays the PKGBUILD build recipe for a package in the
-Arch User Repository (AUR) without downloading or executing it.
+	Long: `Inspect downloads a package's PKGBUILD from the AUR and prints it, along with the
+metadata Aurora parses out of it, without building or running anything. Downloading the
+script is safe; makepkg is what executes it.
 
-For official packages it shows verified metadata and build diagnostics from pacman.
+For official packages it prints the sync-database record from pacman.
 
 Examples:
   aurora inspect paru
