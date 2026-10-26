@@ -45,7 +45,7 @@ func TestIsValidPackageName(t *testing.T) {
 }
 
 func TestInstallAUR_InvalidName(t *testing.T) {
-	err := InstallAUR("invalid package name with spaces")
+	err := InstallAUR("invalid package name with spaces", BuildOptions{})
 	if err == nil {
 		t.Fatalf("expected error for invalid package name, got nil")
 	}
