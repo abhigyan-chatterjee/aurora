@@ -5,136 +5,132 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"sort"
-	"sync"
 
 	"github.com/abhigyan-chatterjee/aurora/internal/aur"
 	"github.com/abhigyan-chatterjee/aurora/internal/pacman"
 	"github.com/abhigyan-chatterjee/aurora/internal/resolve"
 	"github.com/abhigyan-chatterjee/aurora/internal/ui"
+	"github.com/abhigyan-chatterjee/aurora/internal/updates"
 
 	"github.com/spf13/cobra"
 )
 
-type outdatedAURPkg struct {
-	name     string
-	localVer string
-	aurVer   string
-}
+var (
+	updateDryRunFlag bool
+	updateDiffFlag   bool
+	updateNoDepsFlag bool
+)
 
 func update(cmd *cobra.Command, args []string) error {
 	reader := bufio.NewReader(os.Stdin)
 
-	fmt.Println("Checking for updates...")
-
-	var outdated []outdatedAURPkg
-	var aurCheckFailed bool
-
-	installed, err := pacman.GetForeignPackages()
-	if err != nil {
-		aurCheckFailed = true
-		fmt.Printf("Warning: error checking foreign packages: %v\n", err)
-	} else if len(installed) > 0 {
-		var pkgNames []string
-		for name := range installed {
-			pkgNames = append(pkgNames, name)
-		}
-		sort.Strings(pkgNames)
-
-		aurResults, err := aur.GetAURInfoBatch(pkgNames)
-		if err != nil {
-			aurCheckFailed = true
-			fmt.Printf("Warning: error checking AUR updates: %v\n", err)
-		}
-		if len(aurResults) > 0 {
-			var mu sync.Mutex
-			var wg sync.WaitGroup
-			for _, pkg := range aurResults {
-				localVer := installed[pkg.Name]
-				wg.Add(1)
-				go func(p resolve.AURResult, lVer string) {
-					defer wg.Done()
-					if pacman.IsNewerVersion(lVer, p.Version) {
-						mu.Lock()
-						outdated = append(outdated, outdatedAURPkg{
-							name:     p.Name,
-							localVer: lVer,
-							aurVer:   p.Version,
-						})
-						mu.Unlock()
-					}
-				}(pkg, localVer)
-			}
-			wg.Wait()
-
-			sort.Slice(outdated, func(i, j int) bool {
-				return outdated[i].name < outdated[j].name
-			})
-		}
+	ui.Outln("Checking for updates...")
+	report := updates.Collect(appConfig.Parallelism)
+	for _, w := range report.Warnings {
+		ui.Warn("%v", w)
 	}
 
-	fmt.Println("\nAurora update plan:")
-	fmt.Println("  Step 1 - System upgrade: refresh package databases and upgrade official packages")
-	if len(outdated) > 0 {
-		fmt.Printf("  Step 2 - AUR packages to rebuild (%d):\n", len(outdated))
-		for _, o := range outdated {
-			fmt.Printf("    - %s (%s -> %s)\n", o.name, o.localVer, o.aurVer)
+	repoEntries := report.Repositories()
+	aurEntries := report.AUR()
+
+	// Resolve AUR build order before showing the plan so the order the user
+	// approves is the order that will run.
+	aurPlan := make([]installPlanItem, 0, len(aurEntries))
+	for _, e := range aurEntries {
+		aurPlan = append(aurPlan, installPlanItem{
+			Name:    e.Name,
+			Source:  resolve.SourceAUR,
+			Version: e.Candidate,
+		})
+	}
+	if len(aurPlan) > 0 && !updateNoDepsFlag && appConfig.AURDeps {
+		aurPlan = orderAURInstallPlan(aurPlan)
+	}
+
+	ui.Outln("\nAurora update plan:")
+	ui.Outln("  Step 1 - System upgrade: refresh package databases and upgrade repository packages")
+	if len(repoEntries) > 0 {
+		ui.Out("           %d repository package(s) will be upgraded\n", len(repoEntries))
+	}
+
+	switch {
+	case len(aurPlan) > 0:
+		ui.Out("  Step 2 - AUR packages to rebuild (%d):\n", len(aurPlan))
+		for _, item := range aurPlan {
+			label := item.Version
+			if item.IsDep {
+				label += ", dependency"
+			}
+			ui.Out("    - %s (%s)\n", item.Name, label)
 		}
-	} else if aurCheckFailed {
-		fmt.Println("  Step 2 - AUR packages: could not check for updates (see warning above)")
-	} else {
-		fmt.Println("  Step 2 - AUR packages: all up to date")
+	case report.AURCheckFailed:
+		ui.Outln("  Step 2 - AUR packages: could not check for updates (see the warning above)")
+	default:
+		ui.Outln("  Step 2 - AUR packages: all up to date")
+	}
+
+	if !report.CheckupdatesAvailable {
+		ui.Outln("\nNote: install pacman-contrib to have repository upgrades listed in this plan.")
+	}
+
+	if updateDryRunFlag {
+		ui.Outln("\nDry run: nothing was upgraded.")
+		return nil
 	}
 
 	if !ui.ConfirmAction(reader, "\nProceed with update?", yesFlag) {
-		fmt.Println("Update cancelled.")
+		ui.Outln("Update cancelled.")
 		return nil
 	}
 
 	// The system upgrade runs first so AUR packages are rebuilt against the
-	// newest libraries (building before -Syu risks linking against libraries
-	// that the upgrade immediately replaces).
-	fmt.Println("\n--- Upgrading System Packages ---")
-	err = pacman.SystemUpdate()
-	if err != nil {
-		fmt.Printf("Error during system upgrade: %v\n", err)
-		fmt.Println("Skipping AUR rebuilds: build against a fully upgraded system by re-running 'aurora update'.")
-		return err
+	// newest libraries. Building first risks linking against a library the
+	// upgrade replaces moments later.
+	ui.Outln("\n--- Upgrading System Packages ---")
+	if err := pacman.SystemUpdate(appConfig.InteractivePacman); err != nil {
+		ui.Outln("Skipping AUR rebuilds: re-run 'aurora update' once the system upgrade succeeds.")
+		return fmt.Errorf("system upgrade failed: %w", err)
 	}
-	fmt.Println("System upgrade complete.")
+	ui.Outln("System upgrade complete.")
 
-	var aurBuildErrs []error
-	if len(outdated) > 0 {
-		fmt.Println("\n--- Upgrading AUR Packages ---")
-		for _, o := range outdated {
-			fmt.Printf("\nUpdating %s...\n", o.name)
-			err := aur.InstallAUR(o.name)
-			if err != nil {
-				fmt.Printf("Error updating %s: %v\n", o.name, err)
-				aurBuildErrs = append(aurBuildErrs, fmt.Errorf("%s: %w", o.name, err))
-			}
+	if len(aurPlan) == 0 {
+		return nil
+	}
+
+	ui.Outln("\n--- Upgrading AUR Packages ---")
+	var buildErrs []error
+	for _, item := range aurPlan {
+		ui.Out("\nUpdating %s...\n", item.Name)
+		err := aur.InstallAUR(item.Name, aur.BuildOptions{
+			Diff: updateDiffFlag || appConfig.PKGBUILDDiff,
+		})
+		if err != nil {
+			buildErrs = append(buildErrs, fmt.Errorf("updating %s: %w", item.Name, err))
 		}
 	}
-	return errors.Join(aurBuildErrs...)
+	return errors.Join(buildErrs...)
 }
 
 var updateCmd = &cobra.Command{
 	Use:     "update",
 	Aliases: []string{"upgrade"},
-	Short:   "Checks for AUR updates and performs a full system upgrade",
-	Long: `Checks for AUR updates and performs a full system upgrade using 'sudo pacman -Syu --noconfirm'.
+	Short:   "Checks for updates and performs a full system upgrade",
+	Long: `Checks the AUR and the configured repositories for upgrades, then performs a
+full system upgrade with 'sudo pacman -Syu'.
 
-The system upgrade runs FIRST, then outdated AUR packages are rebuilt. This ordering
-ensures AUR builds link against the newest system libraries (paru-style behavior).
+The system upgrade runs FIRST, then outdated AUR packages are rebuilt, so AUR
+builds link against the newest system libraries (paru-style behaviour).
 
-Underlying pacman command flags:
-  -S          : synchronize/install packages from repositories
-  -y          : refresh package databases
-  -u          : upgrade installed packages
-  --noconfirm : skip pacman's per-package confirmation prompts`,
+Examples:
+  aurora update              # upgrade everything
+  aurora update --dry-run    # show the plan and stop
+  aurora update --diff       # show PKGBUILD changes before each AUR rebuild`,
 	RunE: update,
 }
 
 func init() {
+	updateCmd.Flags().BoolVar(&updateDryRunFlag, "dry-run", false, "show the update plan without changing anything")
+	updateCmd.Flags().BoolVar(&updateDiffFlag, "diff", false, "show PKGBUILD changes before each AUR rebuild")
+	updateCmd.Flags().BoolVar(&updateNoDepsFlag, "no-deps", false, "do not resolve or reorder AUR dependencies")
 	rootCmd.AddCommand(updateCmd)
 }
