@@ -43,7 +43,7 @@ Run 'aurora doctor' to check that this machine can use every feature.`,
 		// another distribution or before Arch is installed.
 		if needsPacman(cmd) {
 			if _, err := run.LookPath("pacman"); err != nil {
-				return fmt.Errorf("Aurora currently supports Arch-based systems only; this machine does not appear to be Arch-based (pacman not found)")
+				return fmt.Errorf("this machine does not appear to be Arch-based (pacman not found); Aurora only supports Arch-based systems")
 			}
 		}
 
@@ -53,8 +53,26 @@ Run 'aurora doctor' to check that this machine can use every feature.`,
 		}
 		appConfig = cfg
 		applyConfig(cmd, cfg)
+
+		// --json is a persistent flag, but only the reporting commands implement
+		// it. Accepting it elsewhere silenced the transaction plan and left the
+		// user staring at a bare confirmation prompt.
+		if jsonFlag && !jsonCapableCommands[cmd.Name()] {
+			return fmt.Errorf("--json is not supported by %q; it works with search, info, list, inspect, outdated and doctor", cmd.Name())
+		}
 		return nil
 	},
+}
+
+// jsonCapableCommands implement --json. Every other command prints prose only,
+// so accepting the flag there would suppress output without replacing it.
+var jsonCapableCommands = map[string]bool{
+	"search":   true,
+	"info":     true,
+	"list":     true,
+	"inspect":  true,
+	"outdated": true,
+	"doctor":   true,
 }
 
 // needsPacman reports whether a command requires an Arch system.
