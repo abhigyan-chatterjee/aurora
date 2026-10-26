@@ -56,53 +56,37 @@ func TestPromptSelection(t *testing.T) {
 		{Index: 3, Name: "gtk+3", SourceLabel: "official"},
 	}
 
-	// Test selection by number
-	r := bufio.NewReader(strings.NewReader("2\n"))
-	idx, sel := PromptSelection(r, "prompt", items)
-	if idx != 1 || sel == nil || sel.Name != "neovim-git" {
-		t.Fatalf("expected item index 1 (neovim-git), got idx=%d, sel=%+v", idx, sel)
+	cases := []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "by number", input: "2\n", want: "neovim-git"},
+		{name: "by name", input: "neovim\n", want: "neovim"},
+		{name: "by full name", input: "extra/neovim\n", want: "neovim"},
+		{name: "case insensitive", input: "NEOVIM-GIT\n", want: "neovim-git"},
+		{name: "empty skips", input: "\n", want: ""},
+		{name: "invalid skips", input: "nonexistent\n", want: ""},
+		{name: "out of range skips", input: "99\n", want: ""},
 	}
 
-	// Test selection by exact name
-	r = bufio.NewReader(strings.NewReader("neovim\n"))
-	idx, sel = PromptSelection(r, "prompt", items)
-	if idx != 0 || sel == nil || sel.Name != "neovim" {
-		t.Fatalf("expected item index 0 (neovim), got idx=%d, sel=%+v", idx, sel)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got := PromptSelection(bufio.NewReader(strings.NewReader(tc.input)), "prompt", items)
+			if tc.want == "" {
+				if got != nil {
+					t.Fatalf("expected nil, got %+v", got)
+				}
+				return
+			}
+			if got == nil || got.Name != tc.want {
+				t.Fatalf("expected %q, got %+v", tc.want, got)
+			}
+		})
 	}
 
-	// Test selection by FullName (e.g. repo/name)
-	r = bufio.NewReader(strings.NewReader("extra/neovim\n"))
-	idx, sel = PromptSelection(r, "prompt", items)
-	if idx != 0 || sel == nil || sel.Name != "neovim" {
-		t.Fatalf("expected item index 0 (extra/neovim), got idx=%d, sel=%+v", idx, sel)
-	}
-
-	// Test selection by case-insensitive name
-	r = bufio.NewReader(strings.NewReader("NEOVIM-GIT\n"))
-	idx, sel = PromptSelection(r, "prompt", items)
-	if idx != 1 || sel == nil || sel.Name != "neovim-git" {
-		t.Fatalf("expected item index 1 (neovim-git), got idx=%d, sel=%+v", idx, sel)
-	}
-
-	// Test empty / skip
-	r = bufio.NewReader(strings.NewReader("\n"))
-	idx, sel = PromptSelection(r, "prompt", items)
-	if idx != -1 || sel != nil {
-		t.Fatalf("expected (-1, nil) on empty input, got idx=%d, sel=%+v", idx, sel)
-	}
-
-	// Test invalid input
-	r = bufio.NewReader(strings.NewReader("nonexistent\n"))
-	idx, sel = PromptSelection(r, "prompt", items)
-	if idx != -1 || sel != nil {
-		t.Fatalf("expected (-1, nil) on invalid input, got idx=%d, sel=%+v", idx, sel)
-	}
-
-	// Test empty list
-	r = bufio.NewReader(strings.NewReader("1\n"))
-	idx, sel = PromptSelection(r, "prompt", nil)
-	if idx != -1 || sel != nil {
-		t.Fatalf("expected (-1, nil) on empty items, got idx=%d, sel=%+v", idx, sel)
+	if got := PromptSelection(bufio.NewReader(strings.NewReader("1\n")), "prompt", nil); got != nil {
+		t.Errorf("expected nil for an empty item list, got %+v", got)
 	}
 }
 

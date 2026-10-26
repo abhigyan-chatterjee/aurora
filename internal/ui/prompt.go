@@ -34,38 +34,42 @@ func ConfirmAction(reader *bufio.Reader, prompt string, autoConfirm bool) bool {
 	return input == "y" || input == "yes"
 }
 
-// PromptSelection presents a numbered picker and parses either a numerical index or item name.
-// Returns the slice index and pointer to the selected item, or (-1, nil) on skip/invalid input.
-func PromptSelection(reader *bufio.Reader, prompt string, items []SelectionItem) (int, *SelectionItem) {
+// PromptSelection presents a numbered picker and parses either a numerical index
+// or an item name. It returns the selected item, or nil on skip or invalid input.
+//
+// The slice index is deliberately not returned: every caller acts on the item,
+// and an index that nobody reads is an invitation to misuse it.
+func PromptSelection(reader *bufio.Reader, prompt string, items []SelectionItem) *SelectionItem {
 	if len(items) == 0 {
-		return -1, nil
+		return nil
 	}
 
 	fmt.Print(prompt)
 	input, err := reader.ReadString('\n')
 	if err != nil {
-		return -1, nil
+		return nil
 	}
 	input = strings.TrimSpace(input)
 	if input == "" {
-		return -1, nil
+		return nil
 	}
 
-	// 1. Try numeric choice (1-based Index matching)
+	// 1. Numeric choice, matched against the item's displayed Index.
 	if num, err := strconv.Atoi(input); err == nil {
-		for i, item := range items {
-			if item.Index == num {
-				return i, &items[i]
+		for i := range items {
+			if items[i].Index == num {
+				return &items[i]
 			}
 		}
 	}
 
-	// 2. Try exact/case-insensitive name match or full name match
-	for i, item := range items {
-		if strings.EqualFold(item.Name, input) || (item.FullName != "" && strings.EqualFold(item.FullName, input)) {
-			return i, &items[i]
+	// 2. Exact, case-insensitive name or full-name match.
+	for i := range items {
+		if strings.EqualFold(items[i].Name, input) ||
+			(items[i].FullName != "" && strings.EqualFold(items[i].FullName, input)) {
+			return &items[i]
 		}
 	}
 
-	return -1, nil
+	return nil
 }
