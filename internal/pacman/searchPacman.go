@@ -2,12 +2,12 @@ package pacman
 
 import (
 	"fmt"
-	"os/exec"
 	"regexp"
 	"sort"
 	"strings"
 
 	"github.com/abhigyan-chatterjee/aurora/internal/resolve"
+	"github.com/abhigyan-chatterjee/aurora/internal/run"
 )
 
 var (
@@ -15,10 +15,12 @@ var (
 	pacmanExactFieldRe   = regexp.MustCompile(`^([^:]+)\s*:\s*(.+)$`)
 )
 
-// ParsePacmanSearchOutput parses the standard output of 'pacman -Ss' into structured results.
-// It filters results to those where the package name contains the query (case-insensitively).
-// Package descriptions appearing on subsequent indented lines are correctly associated with
-// the current matching package, and are cleared if an unmatched package header is encountered.
+// ParsePacmanSearchOutput parses the standard output of 'pacman -Ss' into
+// structured results, keeping only packages whose name contains the query.
+//
+// Package descriptions appear on indented lines after their header, so the
+// current result index is cleared when an unmatched header turns up. Otherwise
+// a filtered-out package's description would attach to the previous match.
 func ParsePacmanSearchOutput(output string, packageName string) []resolve.PacmanResult {
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 	if len(lines) == 0 || (len(lines) == 1 && lines[0] == "") {
@@ -71,20 +73,16 @@ func ParsePacmanSearchOutput(output string, packageName string) []resolve.Pacman
 	return results
 }
 
+// SearchPacman runs a repository search.
 func SearchPacman(packageName string) ([]resolve.PacmanResult, error) {
-	cmd := exec.Command("pacman", "-Ss", packageName)
-	output, err := cmd.Output()
+	out, err := run.OutputOrEmpty(run.QueryTimeout, "pacman", "-Ss", packageName)
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("error running pacman -Ss: %v", err)
+		return nil, fmt.Errorf("error running pacman -Ss: %w", err)
 	}
-
-	return ParsePacmanSearchOutput(string(output), packageName), nil
+	return ParsePacmanSearchOutput(string(out), packageName), nil
 }
 
-// ParsePacmanExactOutput parses the standard output of 'pacman -Si' into a PacmanResult.
+// ParsePacmanExactOutput parses the output of 'pacman -Si' into one result.
 func ParsePacmanExactOutput(output string, packageName string) *resolve.PacmanResult {
 	lines := strings.Split(strings.TrimSpace(output), "\n")
 	if len(lines) == 0 || (len(lines) == 1 && lines[0] == "") {
@@ -122,15 +120,11 @@ func ParsePacmanExactOutput(output string, packageName string) *resolve.PacmanRe
 	return &pkg
 }
 
+// SearchPacmanExact looks a package up by exact name in the sync databases.
 func SearchPacmanExact(packageName string) (*resolve.PacmanResult, error) {
-	cmd := exec.Command("pacman", "-Si", packageName)
-	output, err := cmd.Output()
+	out, err := run.OutputOrEmpty(run.QueryTimeout, "pacman", "-Si", packageName)
 	if err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("error running pacman -Si: %v", err)
+		return nil, fmt.Errorf("error running pacman -Si: %w", err)
 	}
-
-	return ParsePacmanExactOutput(string(output), packageName), nil
+	return ParsePacmanExactOutput(string(out), packageName), nil
 }
