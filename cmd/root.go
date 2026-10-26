@@ -1,19 +1,29 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 
+	"github.com/abhigyan-chatterjee/aurora/internal/aur"
+	"github.com/abhigyan-chatterjee/aurora/internal/config"
+	"github.com/abhigyan-chatterjee/aurora/internal/run"
+	"github.com/abhigyan-chatterjee/aurora/internal/ui"
 	"github.com/spf13/cobra"
 )
 
 var (
 	yesFlag     bool
 	conciseFlag bool
+	quietFlag   bool
+	jsonFlag    bool
+
 	// Version is the application version, overridable at build time via:
 	// -ldflags "-X github.com/abhigyan-chatterjee/aurora/cmd.Version=x.y.z"
-	Version = "0.4.0"
+	Version = "0.5.0"
+
+	// appConfig is the merged config file and flag state for this run.
+	appConfig = config.Default()
 )
 
 var rootCmd = &cobra.Command{
@@ -24,28 +34,128 @@ var rootCmd = &cobra.Command{
 	Short:         "Aurora — A powerful, beginner-first package assistant for Arch Linux",
 	Long: `Aurora is a package manager and AUR helper for Arch Linux that combines
 the power of Paru with the simplicity of apt. It prioritizes official repositories,
-explains commands in plain English, and provides transparent package lifecycle management.`,
+explains commands in plain English, and provides transparent package lifecycle management.
+
+Run 'aurora doctor' to check that this machine can use every feature.`,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-		if _, err := exec.LookPath("pacman"); err != nil {
-			msg := "Aurora currently supports Arch-based systems only. This machine does not appear to be Arch-based (pacman not found)"
-			fmt.Fprintln(os.Stderr, msg)
-			return fmt.Errorf("%s", msg)
+		// Commands that are pure documentation or that update Aurora itself do
+		// not need pacman, so they still work when the tool is misused on
+		// another distribution or before Arch is installed.
+		if needsPacman(cmd) {
+			if _, err := run.LookPath("pacman"); err != nil {
+				return fmt.Errorf("Aurora currently supports Arch-based systems only; this machine does not appear to be Arch-based (pacman not found)")
+			}
 		}
+
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("configuration error: %w", err)
+		}
+		appConfig = cfg
+		applyConfig(cmd, cfg)
 		return nil
 	},
 }
 
-func init() {
-	rootCmd.PersistentFlags().BoolVarP(&yesFlag, "yes", "y", false, "skip Aurora's confirmation prompts (pacman/sudo still prompt)")
-	rootCmd.PersistentFlags().BoolVarP(&conciseFlag, "concise", "c", false, "enable concise output mode (suppress teaching explanations and notes)")
+// needsPacman reports whether a command requires an Arch system.
+func needsPacman(cmd *cobra.Command) bool {
+	switch cmd.Name() {
+	case "explain", "selfupdate", "self-update", "completion", "help":
+		// Documentation and self-update work anywhere. Every other command
+		// drives pacman and needs an Arch system.
+		return false
+	}
+	return true
 }
 
+func init() {
+	rootCmd.PersistentFlags().BoolVarP(&yesFlag, "yes", "y", false, "skip Aurora's confirmation prompts (pacman runs with --noconfirm)")
+	rootCmd.PersistentFlags().BoolVarP(&conciseFlag, "concise", "c", false, "enable concise output mode (suppress teaching explanations and notes)")
+	rootCmd.PersistentFlags().BoolVarP(&quietFlag, "quiet", "q", false, "suppress informational output; warnings and errors are still printed")
+	rootCmd.PersistentFlags().BoolVar(&jsonFlag, "json", false, "emit machine-readable JSON instead of prose (search, info, list, inspect, outdated, doctor)")
+
+	// Shell completion. Cobra registers a `completion` command automatically
+	// once it is not disabled, which is what makes `aurora <tab>` work for
+	// bash, zsh, fish and PowerShell.
+	rootCmd.CompletionOptions.DisableDefaultCmd = false
+}
+
+// applyConfig layers the config file under explicitly passed flags.
+func applyConfig(cmd *cobra.Command, cfg config.Config) {
+	if !flagChanged(cmd, "yes") {
+		yesFlag = cfg.Yes
+	}
+	if !flagChanged(cmd, "concise") {
+		conciseFlag = cfg.Concise
+	}
+	if !flagChanged(cmd, "quiet") {
+		quietFlag = cfg.Quiet
+	}
+
+	if !flagChanged(cmd, "from") {
+		switch cmd.Name() {
+		case "install":
+			installFromFlag = cfg.DefaultSource
+		case "search":
+			searchFromFlag = cfg.DefaultSource
+		case "info":
+			infoFromFlag = cfg.DefaultSource
+		case "inspect":
+			inspectFromFlag = cfg.DefaultSource
+		}
+	}
+
+	aur.CacheDirOverride = cfg.CacheDir
+
+	ui.Quiet = quietFlag
+	ui.JSONMode = jsonFlag
+}
+
+func flagChanged(cmd *cobra.Command, name string) bool {
+	if f := cmd.Flags().Lookup(name); f != nil {
+		return f.Changed
+	}
+	if f := cmd.PersistentFlags().Lookup(name); f != nil {
+		return f.Changed
+	}
+	return false
+}
+
+// Execute runs the CLI and returns the process exit code.
 func Execute() {
+	aur.SetVersion(Version)
 	rootCmd.Version = Version
-	rootCmd.CompletionOptions.DisableDefaultCmd = true
-	rootCmd.SetHelpCommand(&cobra.Command{Hidden: true})
-	err := rootCmd.Execute()
-	if err != nil {
+
+	if err := rootCmd.Execute(); err != nil {
+		// A command may ask for a specific status: `outdated` exits 1 when
+		// updates exist, which is a result rather than a failure.
+		var coded interface{ ExitCode() int }
+		if errors.As(err, &coded) {
+			os.Exit(coded.ExitCode())
+		}
+		// Cobra is silenced so a failure is reported exactly once, here, in a
+		// consistent format. With SilenceErrors alone the message was simply
+		// dropped and the user saw a bare exit code.
+		fmt.Fprintf(os.Stderr, "aurora: %v\n", err)
 		os.Exit(1)
 	}
+}
+
+// completePackageNames offers installed package names for shell completion.
+// It is used by commands whose argument is a package already on the system.
+func completePackageNames(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	if len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	names, err := installedPackageNames()
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	return names, cobra.ShellCompDirectiveNoFileComp
+}
+
+// completeAnyPackageName accepts free-form package names without offering
+// filesystem paths, which are never valid arguments here.
+func completeAnyPackageName(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	return nil, cobra.ShellCompDirectiveNoFileComp
 }
