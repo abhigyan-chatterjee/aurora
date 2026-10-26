@@ -58,8 +58,10 @@ func TestVerifySHA256Digest(t *testing.T) {
 	if err := verifyFileDigest(tmp, "sha256:"+hexSum); err != nil {
 		t.Errorf("expected valid digest to pass, got: %v", err)
 	}
-	if err := verifyFileDigest(tmp, ""); err != nil {
-		t.Errorf("expected empty digest to be skipped without error, got: %v", err)
+	// An empty digest must be an error, not a silent skip: refusing to install
+	// an unverified binary is the whole point of the check.
+	if err := verifyFileDigest(tmp, ""); err == nil {
+		t.Error("expected an empty digest to be rejected")
 	}
 	if err := verifyFileDigest(tmp, "sha256:0000000000000000000000000000000000000000000000000000000000000000"); err == nil {
 		t.Errorf("expected mismatched digest to return error")
