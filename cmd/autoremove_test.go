@@ -3,6 +3,8 @@ package cmd
 import (
 	"strings"
 	"testing"
+
+	"github.com/abhigyan-chatterjee/aurora/internal/pacman"
 )
 
 func TestAutoremove_Help(t *testing.T) {
@@ -14,10 +16,10 @@ func TestAutoremove_Help(t *testing.T) {
 	}
 }
 
-func TestGetOrphanPackages(t *testing.T) {
-	orphans, err := GetOrphanPackages()
+func TestOrphansReturnsNonEmptyNames(t *testing.T) {
+	orphans, err := pacman.Orphans()
 	if err != nil {
-		t.Fatalf("unexpected error running GetOrphanPackages: %v", err)
+		t.Fatalf("unexpected error running pacman.Orphans: %v", err)
 	}
 	// Verify that none of the returned orphan names are empty strings
 	for _, o := range orphans {
