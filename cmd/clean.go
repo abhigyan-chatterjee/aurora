@@ -2,12 +2,13 @@ package cmd
 
 import (
 	"bufio"
+	"errors"
 	"fmt"
 	"os"
-	"os/exec"
-	"os/user"
 	"path/filepath"
 
+	"github.com/abhigyan-chatterjee/aurora/internal/aur"
+	"github.com/abhigyan-chatterjee/aurora/internal/pacman"
 	"github.com/abhigyan-chatterjee/aurora/internal/ui"
 	"github.com/spf13/cobra"
 )
@@ -61,102 +62,108 @@ func cleanScope(cacheFlag, pacmanFlag, allFlag bool) (doAUR, doPacman bool) {
 	return cacheFlag, pacmanFlag
 }
 
-func clean(cmd *cobra.Command, args []string) {
+func clean(cmd *cobra.Command, args []string) error {
 	reader := bufio.NewReader(os.Stdin)
 
-	usr, err := user.Current()
+	aurCacheDir, err := aur.CacheDir()
 	if err != nil {
-		fmt.Printf("Error getting current user: %v\n", err)
-		return
+		return err
 	}
-
-	aurCacheDir := filepath.Join(usr.HomeDir, ".cache", "aurora")
 	pacmanCacheDir := "/var/cache/pacman/pkg"
 
 	doAUR, doPacman := cleanScope(cleanCacheFlag, cleanPacmanFlag, cleanAllFlag)
 
-	var aurSize int64
+	var aurSize, pacmanSize int64
+	var sizeErrs []error
+
 	if doAUR {
-		var err error
 		aurSize, err = dirSize(aurCacheDir)
 		if err != nil && !os.IsNotExist(err) {
-			fmt.Printf("Warning: error reading AUR cache size: %v\n", err)
+			ui.Warn("could not measure the AUR cache: %v", err)
+			sizeErrs = append(sizeErrs, err)
 		}
 	}
-
-	var pacmanSize int64
 	if doPacman {
-		var err error
 		pacmanSize, err = dirSize(pacmanCacheDir)
 		if err != nil && !os.IsNotExist(err) {
-			fmt.Printf("Warning: error reading pacman cache size: %v\n", err)
+			ui.Warn("could not measure the pacman cache: %v", err)
+			sizeErrs = append(sizeErrs, err)
 		}
 	}
 
 	if cleanDryRunFlag {
-		fmt.Println("=== Aurora Cache Summary (Dry Run) ===")
+		ui.Outln("=== Aurora Cache Summary (Dry Run) ===")
 		if doAUR {
-			fmt.Printf("AUR Build Cache  (%s): %s\n", aurCacheDir, humanSize(aurSize))
+			ui.Out("AUR Build Cache  (%s): %s\n", aurCacheDir, humanSize(aurSize))
 		}
 		if doPacman {
-			fmt.Printf("Pacman Pkg Cache (%s): %s\n", pacmanCacheDir, humanSize(pacmanSize))
+			ui.Out("Pacman Pkg Cache (%s): %s\n", pacmanCacheDir, humanSize(pacmanSize))
 		}
-		fmt.Println("\nRun 'aurora clean' without --dry-run to reclaim this space.")
-		return
+		ui.Outln("\nRe-run without --dry-run to reclaim this space.")
+		return errors.Join(sizeErrs...)
 	}
 
-	fmt.Println("Aurora cache cleanup plan:")
+	ui.Outln("Aurora cache cleanup plan:")
 	if doAUR {
-		fmt.Printf("  - Purge AUR build cache in %s (%s)\n", aurCacheDir, humanSize(aurSize))
+		ui.Out("  - Purge the AUR build cache in %s (%s)\n", aurCacheDir, humanSize(aurSize))
 	}
 	if doPacman {
-		fmt.Printf("  - Clean uninstalled packages from pacman cache (%s)\n", humanSize(pacmanSize))
+		ui.Out("  - Remove uninstalled packages from the pacman cache (%s)\n", humanSize(pacmanSize))
 	}
 
 	if !ui.ConfirmAction(reader, "\nProceed with cache cleanup?", yesFlag) {
-		fmt.Println("Cleanup cancelled.")
-		return
+		ui.Outln("Cleanup cancelled.")
+		return errors.Join(sizeErrs...)
 	}
+
+	var cleanErrs []error
 
 	if doAUR {
-		fmt.Println("Cleaning AUR build cache...")
-		_ = os.RemoveAll(aurCacheDir)
-		_ = os.MkdirAll(aurCacheDir, 0755)
-		fmt.Println("AUR build cache cleared.")
-	}
-
-	if doPacman {
-		fmt.Println("\nCleaning pacman cache: sudo pacman -Sc --noconfirm")
-		execCmd := exec.Command("sudo", "pacman", "-Sc", "--noconfirm")
-		execCmd.Stdout = os.Stdout
-		execCmd.Stderr = os.Stderr
-		execCmd.Stdin = os.Stdin
-		if err := execCmd.Run(); err != nil {
-			fmt.Printf("Error cleaning pacman cache: %v\n", err)
+		ui.Outln("Cleaning AUR build cache...")
+		if err := os.RemoveAll(aurCacheDir); err != nil {
+			cleanErrs = append(cleanErrs, fmt.Errorf("clearing the AUR cache: %w", err))
+		} else if err := os.MkdirAll(aurCacheDir, 0o755); err != nil {
+			cleanErrs = append(cleanErrs, fmt.Errorf("recreating the AUR cache directory: %w", err))
+		} else {
+			ui.Outln("AUR build cache cleared.")
 		}
 	}
 
-	fmt.Println("\nCache cleanup completed.")
+	if doPacman {
+		args := []string{"pacman", "-Sc"}
+		if !appConfig.InteractivePacman {
+			args = append(args, "--noconfirm")
+		}
+		ui.Out("\nCleaning pacman cache: sudo %v\n", args)
+		if err := pacman.RunSudo(args...); err != nil {
+			cleanErrs = append(cleanErrs, fmt.Errorf("cleaning the pacman cache: %w", err))
+		}
+	}
+
+	if len(cleanErrs) == 0 {
+		ui.Outln("\nCache cleanup completed.")
+	}
+	return errors.Join(append(sizeErrs, cleanErrs...)...)
 }
 
 var cleanCmd = &cobra.Command{
 	Use:   "clean",
 	Short: "Clean AUR build files and package caches",
-	Long: `Clean purges temporary build files and downloaded git repositories in ~/.cache/aurora.
-It can also trigger 'sudo pacman -Sc' to prune old uninstalled packages from pacman's package cache.
+	Long: `Clean purges Aurora's cloned build files and downloaded AUR repositories in
+~/.cache/aurora. It can also prune uninstalled packages from pacman's cache.
 
 Examples:
-  aurora clean            # Clean AUR build cache (~/.cache/aurora)
-  aurora clean --pacman   # Clean pacman's package cache only
-  aurora clean --dry-run  # Check how much disk space can be reclaimed
-  aurora clean --all      # Clean both AUR build cache and pacman package cache`,
-	Run: clean,
+  aurora clean            # clean the AUR build cache
+  aurora clean --pacman   # clean pacman's package cache only
+  aurora clean --dry-run  # report how much disk space can be reclaimed
+  aurora clean --all      # clean both`,
+	RunE: clean,
 }
 
 func init() {
-	cleanCmd.Flags().BoolVar(&cleanCacheFlag, "cache", false, "clean Aurora's AUR build cache (~/.cache/aurora); default when no flags are given")
-	cleanCmd.Flags().BoolVar(&cleanPacmanFlag, "pacman", false, "clean uninstalled packages from pacman's cache (sudo pacman -Sc)")
-	cleanCmd.Flags().BoolVarP(&cleanAllFlag, "all", "a", false, "clean both AUR build cache and pacman package cache")
+	cleanCmd.Flags().BoolVar(&cleanCacheFlag, "cache", false, "clean Aurora's AUR build cache; the default when no flags are given")
+	cleanCmd.Flags().BoolVar(&cleanPacmanFlag, "pacman", false, "clean uninstalled packages from pacman's cache")
+	cleanCmd.Flags().BoolVarP(&cleanAllFlag, "all", "a", false, "clean both the AUR build cache and the pacman cache")
 	cleanCmd.Flags().BoolVarP(&cleanDryRunFlag, "dry-run", "n", false, "show reclaimable disk space without deleting anything")
 	rootCmd.AddCommand(cleanCmd)
 }
