@@ -48,5 +48,15 @@ jobs:
       - name: Build binary
         run: go build -v -o build/aurora .
 
+      - name: Run staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@latest
+          "$(go env GOPATH)/bin/staticcheck" ./...
+
+      - name: Run govulncheck
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          "$(go env GOPATH)/bin/govulncheck" ./...
+
       - name: Run tests with race detector
         run: go test -v -race ./...
