@@ -47,26 +47,26 @@ func update(cmd *cobra.Command, args []string) error {
 		aurPlan = orderAURInstallPlan(aurPlan)
 	}
 
-	ui.Outln("\nAurora update plan:")
-	ui.Outln("  Step 1 - System upgrade: refresh package databases and upgrade repository packages")
+	ui.Preview("\nAurora update plan:\n")
+	ui.Preview("  Step 1 - System upgrade: refresh package databases and upgrade repository packages\n")
 	if len(repoEntries) > 0 {
-		ui.Out("           %d repository package(s) will be upgraded\n", len(repoEntries))
+		ui.Preview("           %d repository package(s) will be upgraded\n", len(repoEntries))
 	}
 
 	switch {
 	case len(aurPlan) > 0:
-		ui.Out("  Step 2 - AUR packages to rebuild (%d):\n", len(aurPlan))
+		ui.Preview("  Step 2 - AUR packages to rebuild (%d):\n", len(aurPlan))
 		for _, item := range aurPlan {
 			label := item.Version
 			if item.IsDep {
 				label += ", dependency"
 			}
-			ui.Out("    - %s (%s)\n", item.Name, label)
+			ui.Preview("    - %s (%s)\n", item.Name, label)
 		}
 	case report.AURCheckFailed:
-		ui.Outln("  Step 2 - AUR packages: could not check for updates (see the warning above)")
+		ui.Preview("  Step 2 - AUR packages: could not check for updates (see the warning above)\n")
 	default:
-		ui.Outln("  Step 2 - AUR packages: all up to date")
+		ui.Preview("  Step 2 - AUR packages: all up to date\n")
 	}
 
 	if !report.CheckupdatesAvailable {

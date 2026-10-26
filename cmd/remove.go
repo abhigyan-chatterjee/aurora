@@ -99,9 +99,9 @@ func remove(cmd *cobra.Command, args []string) error {
 		return errors.Join(append(nameErrs, removeErrs...)...)
 	}
 
-	ui.Outln("\nAurora is about to remove:")
+	ui.Preview("\nAurora is about to remove:\n")
 	for _, pkg := range removeList {
-		ui.Out("  - %s\n", pkg)
+		ui.Preview("  - %s\n", pkg)
 	}
 
 	if !ui.ConfirmAction(reader, "\nAre you sure?", yesFlag) {

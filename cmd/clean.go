@@ -103,12 +103,12 @@ func clean(cmd *cobra.Command, args []string) error {
 		return errors.Join(sizeErrs...)
 	}
 
-	ui.Outln("Aurora cache cleanup plan:")
+	ui.Preview("Aurora cache cleanup plan:\n")
 	if doAUR {
-		ui.Out("  - Purge the AUR build cache in %s (%s)\n", aurCacheDir, humanSize(aurSize))
+		ui.Preview("  - Purge the AUR build cache in %s (%s)\n", aurCacheDir, humanSize(aurSize))
 	}
 	if doPacman {
-		ui.Out("  - Remove uninstalled packages from the pacman cache (%s)\n", humanSize(pacmanSize))
+		ui.Preview("  - Remove uninstalled packages from the pacman cache (%s)\n", humanSize(pacmanSize))
 	}
 
 	if !ui.ConfirmAction(reader, "\nProceed with cache cleanup?", yesFlag) {

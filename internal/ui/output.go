@@ -35,6 +35,18 @@ func Outln(a ...any) {
 	fmt.Println(a...)
 }
 
+// Preview writes a transaction summary that the user is about to confirm.
+//
+// Quiet does not suppress it. Suppressing the plan while still showing the
+// prompt asks the user to approve a destructive action they cannot see, which
+// is worse than being noisy.
+func Preview(format string, a ...any) {
+	if JSONMode {
+		return
+	}
+	fmt.Printf(format, a...)
+}
+
 // Warn writes a warning to stderr. Warnings survive --quiet: silently dropping
 // a warning would leave the user with a failed operation and no explanation.
 func Warn(format string, a ...any) {

@@ -165,10 +165,9 @@ func orderAURInstallPlan(plan []installPlanItem) []installPlanItem {
 
 	ordered := make([]installPlanItem, 0, len(order))
 	for _, name := range order {
+		// byName is keyed by the requested name, so a hit is the real plan item
+		// and a miss is a dependency pulled in by the resolver.
 		if item, ok := byName[name]; ok {
-			if name != item.Name {
-				continue
-			}
 			ordered = append(ordered, item)
 			continue
 		}
@@ -349,20 +348,20 @@ func promptSuggestion(res *resolve.ResolvedPackage, reader *bufio.Reader, filter
 }
 
 func printInstallPlan(official, aurPlan []installPlanItem) {
-	ui.Outln("\nAurora is about to install:")
+	ui.Preview("\nAurora is about to install:\n")
 	for _, item := range official {
 		repo := item.Repo
 		if repo == "" {
 			repo = "official"
 		}
-		ui.Out("  - %s (%s)\n", item.Name, repo)
+		ui.Preview("  - %s (%s)\n", item.Name, repo)
 	}
 	for _, item := range aurPlan {
 		note := "AUR"
 		if item.IsDep {
 			note = "AUR dependency"
 		}
-		ui.Out("  - %s (%s)\n", item.Name, note)
+		ui.Preview("  - %s (%s)\n", item.Name, note)
 	}
 }
 

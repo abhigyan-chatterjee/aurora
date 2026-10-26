@@ -25,9 +25,9 @@ func autoremove(cmd *cobra.Command, args []string) error {
 		return nil
 	}
 
-	ui.Out("\nFound %d orphan package(s) no longer required by any installed package:\n", len(orphans))
+	ui.Preview("\nFound %d orphan package(s) no longer required by any installed package:\n", len(orphans))
 	for _, p := range orphans {
-		ui.Out("  - %s\n", p)
+		ui.Preview("  - %s\n", p)
 	}
 
 	if !conciseFlag {
