@@ -105,16 +105,32 @@ jobs:
           echo "version=$NEXT_VER" >> "$GITHUB_OUTPUT"
           echo "tag=$NEXT_TAG" >> "$GITHUB_OUTPUT"
 
-      - name: Build release binary
+      - name: Build release binaries
         if: steps.semver.outputs.skip != 'true'
         run: |
+          set -euo pipefail
           mkdir -p dist
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build \
-            -trimpath \
-            -ldflags="-s -w -X github.com/abhigyan-chatterjee/aurora/cmd.Version=${{ steps.semver.outputs.version }}" \
-            -o dist/aurora .
-          cd dist
-          sha256sum aurora > aurora.sha256
+          VERSION="${{ steps.semver.outputs.version }}"
+
+          # One binary per architecture. A self-updater that cannot tell which
+          # architecture it is running on will happily install an amd64 binary
+          # on aarch64, leaving the tool unable to execute.
+          for arch in amd64 arm64; do
+            name="aurora-linux-${arch}"
+            CGO_ENABLED=0 GOOS=linux GOARCH="${arch}" go build \
+              -trimpath \
+              -ldflags="-s -w -X github.com/abhigyan-chatterjee/aurora/cmd.Version=${VERSION}" \
+              -o "dist/${name}" .
+            ( cd dist && sha256sum "${name}" > "${name}.sha256" )
+          done
+
+          # Backwards compatibility: releases up to 0.4.0 published a single
+          # asset called `aurora` built for amd64, and those clients look for
+          # exactly that name.
+          cp dist/aurora-linux-amd64 dist/aurora
+          ( cd dist && sha256sum aurora > aurora.sha256 )
+
+          ls -l dist
 
       - name: Create Git tag and publish GitHub Release
         if: steps.semver.outputs.skip != 'true'
@@ -128,6 +144,10 @@ jobs:
           git push origin "$TAG"
 
           gh release create "$TAG" \
+            dist/aurora-linux-amd64 \
+            dist/aurora-linux-amd64.sha256 \
+            dist/aurora-linux-arm64 \
+            dist/aurora-linux-arm64.sha256 \
             dist/aurora \
             dist/aurora.sha256 \
             --title "Aurora $TAG" \
