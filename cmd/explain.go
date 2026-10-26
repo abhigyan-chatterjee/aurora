@@ -2,9 +2,7 @@ package cmd
 
 import (
 	"bufio"
-	"fmt"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/abhigyan-chatterjee/aurora/internal/ui"
@@ -31,8 +29,8 @@ What each flag means:
 
 Why it matters:
   Arch Linux is a rolling-release distribution. Performing full system upgrades
-  regularly ensures system dependencies remain synchronized and safe. Partial upgrades
-  (installing new software without updating the rest of the system) are discouraged.`,
+  regularly keeps dependencies synchronised and safe. Partial upgrades (installing
+  new software without updating the rest of the system) are discouraged.`,
 		Aliases: []string{"-Syu", "syu", "system-upgrade", "upgrade"},
 	},
 	{
@@ -43,99 +41,109 @@ Why it matters:
 What each flag means:
   -R : remove the specified package
   -n : nosave (remove global configuration files)
-  -s : recursive (remove dependencies that are no longer required by any other installed package)
+  -s : recursive (remove dependencies nothing else needs)
 
 Why it matters:
-  Plain 'pacman -R' leaves orphan dependencies behind, cluttering your disk space over time.
-  'pacman -Rns' cleans up both the target application and its leftover dependencies safely.`,
+  Plain 'pacman -R' leaves orphan dependencies behind. 'pacman -Rns' removes the
+  application and the dependencies it pulled in, without touching anything another
+  package still needs.`,
 		Aliases: []string{"-Rns", "rns", "remove-flags"},
 	},
 	{
 		Title:   "AUR (Arch User Repository)",
-		Summary: "Community-driven repository containing build scripts (PKGBUILDs).",
-		Description: `The Arch User Repository (AUR) is a community-driven repository for Arch users.
+		Summary: "Community repository of build scripts (PKGBUILDs), not binaries.",
+		Description: `The Arch User Repository (AUR) is a community-driven repository.
 
 Key points:
-  1. AUR does NOT host prebuilt binary packages.
+  1. The AUR does NOT host prebuilt binary packages.
   2. It hosts build scripts called PKGBUILDs.
-  3. Aurora clones the repository, reads the PKGBUILD, and runs 'makepkg' to build the binary on your system.
+  3. Aurora clones the repository, shows you the PKGBUILD if you ask, and runs
+     'makepkg' to build the package on your machine.
 
 Safety advice:
-  Always prefer official repository packages when available. Official packages are prebuilt,
-  tested, and maintained directly by Arch developers.`,
+  Prefer official repository packages when both exist. Official packages are
+  prebuilt, signed, and maintained by Arch developers.`,
 		Aliases: []string{"aur", "arch-user-repository"},
 	},
 	{
 		Title:   "Official Repositories",
-		Summary: "Core, Extra, and Multilib repositories maintained by Arch Linux developers.",
-		Description: `Official repositories (core, extra, multilib) are the primary software sources on Arch Linux.
+		Summary: "Core, Extra, and Multilib repositories maintained by Arch developers.",
+		Description: `Official repositories (core, extra, multilib) are the primary software
+sources on Arch Linux.
 
 Key advantages:
-  - Packages are prebuilt binaries (no long build times).
+  - Packages are prebuilt binaries, so there is no build time.
   - Maintained and digitally signed by Arch Linux developers.
-  - Automatically checked and updated as part of system upgrades.
+  - Updated as part of every system upgrade.
 
-Aurora's Philosophy:
+Aurora's rule:
   Official repositories are always preferred over the AUR.`,
 		Aliases: []string{"official", "official-repos", "repos"},
 	},
 	{
 		Title:   "PKGBUILD & makepkg",
-		Summary: "Build recipe and build tool used to create Arch Linux packages.",
-		Description: `PKGBUILD is a text script containing metadata (version, dependencies, source URLs) and build instructions.
+		Summary: "The build recipe and build tool used to create Arch packages.",
+		Description: `A PKGBUILD is a script holding metadata (version, dependencies, source URLs)
+and build instructions.
 
 How makepkg works:
-  1. Downloads source files from upstream developers.
-  2. Verifies integrity using checksums (SHA256/MD5).
+  1. Downloads source files from upstream.
+  2. Verifies integrity using the checksums in the PKGBUILD.
   3. Compiles the software locally.
-  4. Packages the compiled files into a '.pkg.tar.zst' archive.
-  5. Installs the compiled package onto your system via pacman.`,
+  4. Packages the result into a '.pkg.tar.zst' archive.
+  5. Installs it with pacman.
+
+Because it runs shell code from the internet, review the PKGBUILD before building
+anything you do not trust: 'aurora inspect <package>'.`,
 		Aliases: []string{"pkgbuild", "makepkg"},
 	},
 	{
 		Title:   "Partial Upgrades",
 		Summary: "Installing new software without upgrading the rest of the system.",
-		Description: `A partial upgrade occurs when you update package databases ('pacman -Sy') and install a package without upgrading existing installed packages ('pacman -u').
+		Description: `A partial upgrade happens when you refresh the database ('pacman -Sy') and
+install a package without upgrading what is already installed ('pacman -u').
 
-Why it causes issues:
-  Shared libraries (e.g. openssl, glibc) on Arch are continually updated. If a new application expects
-  a newer shared library version than what is currently installed on your machine, programs can crash.
+Why it causes problems:
+  Shared libraries (openssl, glibc) move constantly on Arch. An application built
+  against a newer library than the one installed can crash in confusing ways.
 
 Best practice:
-  Always perform a full system update ('aurora update' or 'sudo pacman -Syu') regularly.`,
+  Always run a full upgrade: 'aurora update' or 'sudo pacman -Syu'.`,
 		Aliases: []string{"partial-upgrades", "partial-upgrade"},
 	},
 	{
 		Title:   "Foreign Packages & Orphans",
-		Summary: "Packages installed outside official repos or dependencies no longer needed.",
-		Description: `Foreign Packages:
-  Packages present on your system that do not exist in official repositories.
-  These are usually installed from the AUR or installed manually.
-  View them using: 'pacman -Qm'
+		Summary: "Packages outside the official repos, and dependencies nothing needs.",
+		Description: `Foreign packages:
+  Installed packages that no sync database provides. Usually built from the AUR
+  or installed from a local file. View them with: 'pacman -Qm'
 
 Orphans:
-  Packages that were automatically installed as dependencies for another application,
-  but are no longer required because that application was uninstalled.
-  Remove them using: 'aurora remove <package>' or 'pacman -Rns'.`,
+  Packages installed as dependencies whose parent has since been removed.
+  View them with: 'aurora list --orphans'
+  Remove them with: 'aurora autoremove'`,
 		Aliases: []string{"foreign", "foreign-packages", "orphans"},
 	},
 }
 
-func explain(cmd *cobra.Command, args []string) {
+func explain(cmd *cobra.Command, args []string) error {
 	reader := bufio.NewReader(os.Stdin)
 
-	// Since DisableFlagParsing is true (so topics like -Syu and -Rns can be passed without being parsed
-	// as unknown flags), we manually inspect arguments for standard flags like --help, -h, --concise, -c.
+	// The command sets DisableFlagParsing so topics like -Syu are not eaten by
+	// the flag parser. Standard flags are therefore handled here by hand.
 	var cleanArgs []string
 	for _, arg := range args {
 		switch arg {
 		case "--help", "-h":
-			_ = cmd.Help()
-			return
+			return cmd.Help()
 		case "--concise", "-c":
 			conciseFlag = true
+			ui.Quiet = quietFlag
 		case "--yes", "-y":
 			yesFlag = true
+		case "--quiet", "-q":
+			quietFlag = true
+			ui.Quiet = true
 		default:
 			cleanArgs = append(cleanArgs, arg)
 		}
@@ -147,59 +155,60 @@ func explain(cmd *cobra.Command, args []string) {
 			for _, alias := range exp.Aliases {
 				if strings.EqualFold(alias, query) {
 					printExplanation(exp)
-					return
+					return nil
 				}
 			}
 		}
-		fmt.Printf("No exact explanation topic found for \"%s\".\n\n", cleanArgs[0])
+		ui.Out("No explanation topic found for %q.\n\n", cleanArgs[0])
 	}
 
-	fmt.Println("=== Aurora Teaching Mode — Concepts & Walkthroughs ===")
-	fmt.Println("Select a topic to learn more about Arch Linux package management:")
-	fmt.Println()
+	ui.Outln("=== Aurora Teaching Mode — Concepts & Walkthroughs ===")
+	ui.Outln("Select a topic to learn more about Arch Linux package management:")
+	ui.Outln("")
 
-	var items []ui.SelectionItem
+	items := make([]ui.SelectionItem, 0, len(explanations))
 	for i, exp := range explanations {
-		item := ui.SelectionItem{
+		items = append(items, ui.SelectionItem{
 			Index:       i + 1,
 			Name:        exp.Title,
 			SourceLabel: exp.Summary,
-		}
-		items = append(items, item)
-		fmt.Printf("  [%d] %-30s - %s\n", i+1, exp.Title, exp.Summary)
+		})
+		ui.Out("  [%d] %-30s - %s\n", i+1, exp.Title, exp.Summary)
 	}
 
-	_, selected := ui.PromptSelection(reader, "\nEnter topic number or name (or press Enter to exit): ", items)
+	selected := ui.PromptSelection(reader, "\nEnter topic number or name (or press Enter to exit): ", items)
 	if selected == nil {
-		return
+		return nil
 	}
 
 	for _, exp := range explanations {
 		if exp.Title == selected.Name {
 			printExplanation(exp)
-			return
+			return nil
 		}
 	}
+	return nil
 }
 
 func printExplanation(exp conceptExplanation) {
-	fmt.Printf("\n=======================================================\n")
-	fmt.Printf(" Topic: %s\n", exp.Title)
-	fmt.Printf("=======================================================\n\n")
+	ui.Outln("\n=======================================================")
+	ui.Out(" Topic: %s\n", exp.Title)
+	ui.Outln("=======================================================")
+	ui.Outln("")
 	if conciseFlag {
-		fmt.Println(exp.Summary)
+		ui.Outln(exp.Summary)
 	} else {
-		fmt.Println(exp.Description)
+		ui.Outln(exp.Description)
 	}
-	fmt.Println()
+	ui.Outln("")
 }
 
 var explainCmd = &cobra.Command{
 	Use:                "explain [topic]",
 	Short:              "Explains Arch Linux package concepts, flags, and workflows in plain English",
 	DisableFlagParsing: true,
-	Long: `Teaching mode command that provides plain-English explanations of Arch Linux concepts,
-pacman command flags (-Syu, -Rns), AUR build processes, and safety best practices.
+	Long: `Teaching mode command that provides plain-English explanations of Arch Linux
+concepts, pacman flags (-Syu, -Rns), the AUR build process, and safety best practices.
 
 Available topics:
   - -Syu / upgrade
@@ -209,18 +218,19 @@ Available topics:
   - pkgbuild / makepkg
   - partial-upgrades
   - foreign / orphans`,
-	Run: explain,
+	RunE:              explain,
+	ValidArgsFunction: completeExplainTopics,
+}
+
+// completeExplainTopics offers the built-in topics for shell completion.
+func completeExplainTopics(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
+	topics := make([]string, 0, len(explanations))
+	for _, exp := range explanations {
+		topics = append(topics, exp.Aliases...)
+	}
+	return topics, cobra.ShellCompDirectiveNoFileComp
 }
 
 func init() {
 	rootCmd.AddCommand(explainCmd)
-}
-
-func listAvailableExplainTopics() []string {
-	var topics []string
-	for _, exp := range explanations {
-		topics = append(topics, exp.Title)
-	}
-	sort.Strings(topics)
-	return topics
 }

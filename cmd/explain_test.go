@@ -82,20 +82,3 @@ func TestExplain_FullDescription(t *testing.T) {
 		t.Errorf("expected full teaching explanation in standard mode, got: %s", out)
 	}
 }
-
-func TestListAvailableExplainTopics(t *testing.T) {
-	topics := listAvailableExplainTopics()
-	if len(topics) != len(explanations) {
-		t.Fatalf("expected %d topics, got %d", len(explanations), len(topics))
-	}
-	foundSyu := false
-	for _, top := range topics {
-		if strings.Contains(top, "-Syu") {
-			foundSyu = true
-			break
-		}
-	}
-	if !foundSyu {
-		t.Errorf("expected -Syu topic in list, got: %v", topics)
-	}
-}
