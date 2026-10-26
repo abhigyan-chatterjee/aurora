@@ -31,7 +31,7 @@ v0.5 fixes a PKGBUILD parser that reported the wrong dependencies, makes the CLI
 
 ### 🛡️ Reliability
 
-- Every subprocess has a deadline; a pacman call waiting on a database lock can no longer hang the tool.
+- Every subprocess that can block has a deadline; a pacman call waiting on a database lock can no longer hang the tool. The two interactive calls (sudo asking for a password, `go install` compiling) are unbounded on purpose.
 - Version checks run through a bounded worker pool instead of one goroutine (and one `vercmp` process) per package.
 - `--needed` is passed to pacman, so re-running an install is a no-op instead of a reinstall.
 - Errors are printed exactly once, to stderr.
@@ -61,8 +61,8 @@ v0.5 fixes a PKGBUILD parser that reported the wrong dependencies, makes the CLI
 
 - **`-y, --yes`**: Skip Aurora's own confirmation prompts. pacman itself runs with `--noconfirm`.
 - **`-c, --concise`**: Suppress teaching explanations and notes.
-- **`-q, --quiet`**: Suppress informational output. Warnings and errors are always printed.
-- **`--json`**: Emit machine-readable JSON instead of prose.
+- **`-q, --quiet`**: Suppress informational output. Warnings, errors and the package list shown before a confirmation are always printed.
+- **`--json`**: Emit machine-readable JSON instead of prose. Supported by `search`, `info`, `list`, `inspect`, `outdated` and `doctor`; other commands reject it rather than silently printing nothing.
 - **`-v, --version`**: Show the Aurora version.
 
 `--yes`, `--concise`, `--quiet`, `--from` and the other settings can also be set in the config file; an explicit flag always wins.
@@ -182,6 +182,15 @@ aurora list --foreign
 aurora clean --dry-run
 aurora remove neovim
 ```
+
+---
+
+## Known Limitations
+
+- **AUR packages are not signed.** The AUR hosts build scripts, not binaries, so there is no signature to check. Aurora can show you the PKGBUILD (`inspect`, `--inspect`) and what changed since your last build (`--diff`); judging it is still your call.
+- **The update plan is computed before the system upgrade.** If `pacman -Syu` changes something that makes an AUR rebuild pointless, the rebuild still runs. Re-running `aurora update` after a large upgrade gets a fresh plan.
+- **PKGBUILD parsing is not a shell.** It reads declarations, not expressions: a `pkgver` computed at build time shows as the literal text. Braces inside an unquoted here-document whose body is unbalanced can end a function body early.
+- **`list --upgradable` depends on `checkupdates`** (pacman-contrib) for repository upgrades. Without it Aurora says so instead of reporting a false all-clear.
 
 ---
 
