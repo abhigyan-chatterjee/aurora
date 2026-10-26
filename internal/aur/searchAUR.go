@@ -1,10 +1,7 @@
 package aur
 
 import (
-	"encoding/json"
-	"fmt"
 	"net/http"
-	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -12,67 +9,21 @@ import (
 	"github.com/abhigyan-chatterjee/aurora/internal/resolve"
 )
 
-const aurUserAgent = "aurora/0.4"
+// SearchAUR performs a keyword search, most-voted first.
+func SearchAUR(query string) ([]resolve.AURResult, error) {
+	client := &http.Client{Timeout: 10 * time.Second}
 
-func newAURRequest(url string) (*http.Request, error) {
-	req, err := http.NewRequest("GET", url, nil)
+	raw, err := getRPC(client, searchEndpoint(query))
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("User-Agent", aurUserAgent)
-	return req, nil
-}
-
-func SearchAUR(packageName string) ([]resolve.AURResult, error) {
-	const aurRPCURL = "https://aur.archlinux.org/rpc/v5/search/"
-	url := aurRPCURL + url.PathEscape(packageName)
-
-	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := newAURRequest(url)
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("error making HTTP request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("received non-OK HTTP status: %s", resp.Status)
-	}
-
-	var raw struct {
-		ResultCount int `json:"resultcount"`
-		Results     []struct {
-			Name         string `json:"Name"`
-			Version      string `json:"Version"`
-			Description  string `json:"Description"`
-			URL          string `json:"URL"`
-			LastModified int64  `json:"LastModified"`
-			NumVotes     int    `json:"NumVotes"`
-		} `json:"results"`
-	}
-
-	err = json.NewDecoder(resp.Body).Decode(&raw)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding JSON response: %v", err)
-	}
-
-	if raw.ResultCount == 0 {
+	if raw.ResultCount == 0 || len(raw.Results) == 0 {
 		return nil, nil
 	}
 
-	var results []resolve.AURResult
+	results := make([]resolve.AURResult, 0, len(raw.Results))
 	for _, r := range raw.Results {
-		results = append(results, resolve.AURResult{
-			Name:         r.Name,
-			Version:      r.Version,
-			Description:  r.Description,
-			URL:          r.URL,
-			LastModified: r.LastModified,
-			NumVotes:     r.NumVotes,
-		})
+		results = append(results, r.toResult())
 	}
 
 	sort.SliceStable(results, func(i, j int) bool {
@@ -85,58 +36,24 @@ func SearchAUR(packageName string) ([]resolve.AURResult, error) {
 	return results, nil
 }
 
+// SearchAURExact looks up one package by exact name. The RPC matches loosely,
+// so the returned name is compared case-insensitively before it is accepted.
 func SearchAURExact(packageName string) (*resolve.AURResult, error) {
-	const aurInfoURL = "https://aur.archlinux.org/rpc/v5/info/"
-	url := aurInfoURL + url.PathEscape(packageName)
-
 	client := &http.Client{Timeout: 10 * time.Second}
-	req, err := newAURRequest(url)
+
+	raw, err := getRPC(client, infoEndpoint(packageName))
 	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
+		return nil, err
 	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("error making HTTP request: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("received non-OK HTTP status: %s", resp.Status)
-	}
-
-	var raw struct {
-		ResultCount int `json:"resultcount"`
-		Results     []struct {
-			Name         string `json:"Name"`
-			Version      string `json:"Version"`
-			Description  string `json:"Description"`
-			URL          string `json:"URL"`
-			LastModified int64  `json:"LastModified"`
-			NumVotes     int    `json:"NumVotes"`
-		} `json:"results"`
-	}
-
-	err = json.NewDecoder(resp.Body).Decode(&raw)
-	if err != nil {
-		return nil, fmt.Errorf("error decoding JSON response: %v", err)
-	}
-
 	if raw.ResultCount == 0 || len(raw.Results) == 0 {
 		return nil, nil
 	}
 
 	for _, r := range raw.Results {
 		if strings.EqualFold(r.Name, packageName) {
-			return &resolve.AURResult{
-				Name:         r.Name,
-				Version:      r.Version,
-				Description:  r.Description,
-				URL:          r.URL,
-				LastModified: r.LastModified,
-				NumVotes:     r.NumVotes,
-			}, nil
+			result := r.toResult()
+			return &result, nil
 		}
 	}
-
 	return nil, nil
 }

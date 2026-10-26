@@ -45,9 +45,9 @@ func TestGetAURInfoBatch_Chunking(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origURL := aurRPCInfoBaseURL
-	aurRPCInfoBaseURL = srv.URL + "/rpc/?v=5&type=info&"
-	defer func() { aurRPCInfoBaseURL = origURL }()
+	origURL := aurRPCBaseURL
+	aurRPCBaseURL = srv.URL
+	defer func() { aurRPCBaseURL = origURL }()
 
 	// 310 packages -> 3 chunks: 150, 150, 10
 	names := make([]string, 310)
@@ -91,9 +91,9 @@ func TestGetAURInfoBatch_PartialFailurePreservesChunks(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	origURL := aurRPCInfoBaseURL
-	aurRPCInfoBaseURL = srv.URL + "/rpc/?v=5&type=info&"
-	defer func() { aurRPCInfoBaseURL = origURL }()
+	origURL := aurRPCBaseURL
+	aurRPCBaseURL = srv.URL
+	defer func() { aurRPCBaseURL = origURL }()
 
 	names := make([]string, 160) // 150 in chunk 1 (succeeds), 10 in chunk 2 (fails)
 	for i := range names {

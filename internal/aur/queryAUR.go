@@ -1,9 +1,7 @@
 package aur
 
 import (
-	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
 	"net/url"
 	"strings"
@@ -12,21 +10,25 @@ import (
 	"github.com/abhigyan-chatterjee/aurora/internal/resolve"
 )
 
-// aurInfoBatchSize caps how many packages are queried per RPC request.
-// The AUR RPC interface encodes every name as an "arg[]=" query parameter in
-// the URL, so oversized batches can exceed URL length limits on systems with
-// many foreign packages installed.
+// aurInfoBatchSize caps how many packages go into one RPC request.
+//
+// The AUR RPC interface encodes every name as its own arg[]= query parameter,
+// so an oversized batch exceeds URL length limits on a machine with many
+// foreign packages installed.
 const aurInfoBatchSize = 150
 
-var aurRPCInfoBaseURL = "https://aur.archlinux.org/rpc/?v=5&type=info&"
-
+// GetAURInfoBatch fetches metadata for many packages, chunked to stay inside
+// URL limits. Chunks are independent: one failing chunk does not discard the
+// results of the others.
 func GetAURInfoBatch(packageNames []string) ([]resolve.AURResult, error) {
 	if len(packageNames) == 0 {
 		return nil, nil
 	}
 
-	var all []resolve.AURResult
-	var chunkErrs []error
+	var (
+		all       []resolve.AURResult
+		chunkErrs []error
+	)
 	for start := 0; start < len(packageNames); start += aurInfoBatchSize {
 		end := start + aurInfoBatchSize
 		if end > len(packageNames) {
@@ -43,55 +45,22 @@ func GetAURInfoBatch(packageNames []string) ([]resolve.AURResult, error) {
 }
 
 func getAURInfoChunk(packageNames []string) ([]resolve.AURResult, error) {
-	var argsQuery []string
+	args := make([]string, 0, len(packageNames))
 	for _, name := range packageNames {
-		argsQuery = append(argsQuery, "arg[]="+url.QueryEscape(name))
+		args = append(args, "arg[]="+url.QueryEscape(name))
 	}
-
-	reqURL := aurRPCInfoBaseURL + strings.Join(argsQuery, "&")
+	endpoint := aurRPCBaseURL + "/info?" + strings.Join(args, "&")
 
 	client := &http.Client{Timeout: 30 * time.Second}
-	req, err := newAURRequest(reqURL)
+
+	raw, err := getRPC(client, endpoint)
 	if err != nil {
-		return nil, fmt.Errorf("error creating request: %v", err)
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("error checking AUR: %v", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("received non-OK HTTP status: %s", resp.Status)
+		return nil, err
 	}
 
-	var raw struct {
-		ResultCount int `json:"resultcount"`
-		Results     []struct {
-			Name         string `json:"Name"`
-			Version      string `json:"Version"`
-			Description  string `json:"Description"`
-			URL          string `json:"URL"`
-			LastModified int64  `json:"LastModified"`
-			NumVotes     int    `json:"NumVotes"`
-		} `json:"results"`
-	}
-
-	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
-		return nil, fmt.Errorf("error decoding AUR response: %v", err)
-	}
-
-	var results []resolve.AURResult
+	results := make([]resolve.AURResult, 0, len(raw.Results))
 	for _, r := range raw.Results {
-		results = append(results, resolve.AURResult{
-			Name:         r.Name,
-			Version:      r.Version,
-			Description:  r.Description,
-			URL:          r.URL,
-			LastModified: r.LastModified,
-			NumVotes:     r.NumVotes,
-		})
+		results = append(results, r.toResult())
 	}
-
 	return results, nil
 }
