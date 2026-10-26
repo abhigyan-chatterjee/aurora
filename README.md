@@ -27,7 +27,7 @@ v0.5 fixes a PKGBUILD parser that reported the wrong dependencies, makes the CLI
 - **`aurora doctor`** — checks pacman, vercmp, git, makepkg, fakeroot, sudo, checkupdates, database freshness, AUR reachability, cache writability, orphans and config validity. Exits 1 when something required is missing.
 - **AUR dependency ordering** — `install` and `update` resolve `depends`/`makedepends`/`checkdepends` and build dependencies first. Virtual provides that pacman handles itself are left to pacman.
 - **PKGBUILD diff on rebuild (`--diff`)** — opt-in, off by default. Beginners get a clean update; auditors can see exactly what changed since the last build.
-- **Shell completion** — `aurora completion bash|zsh|fish` is enabled, and package arguments complete from installed packages.
+- **Shell completion** — `aurora completion bash|zsh|fish|powershell` is enabled, and package arguments complete from installed packages.
 
 ### 🛡️ Reliability
 
@@ -43,19 +43,19 @@ v0.5 fixes a PKGBUILD parser that reported the wrong dependencies, makes the CLI
 | Command | What it does |
 |---|---|
 | `aurora doctor [--json]` | Check that this machine can use every feature |
-| `aurora outdated [--aur] [--repos] [--json]` | List available updates without changing anything |
+| `aurora outdated [--aur\|--repos] [--json]` | List available updates without changing anything |
 | `aurora explain [topic]` | Learn Arch Linux concepts, pacman flags, and AUR workflows |
-| `aurora inspect <package> [--json] [--raw]` | Inspect a PKGBUILD or official package metadata (alias: `pkgbuild`) |
-| `aurora search <query...> [--from] [--json]` | Search official repos and the AUR concurrently |
-| `aurora info <package...> [--from] [--json]` | Show detailed package information |
-| `aurora install <package...> [--dry-run] [-i] [--diff]` | Install in batch with preview, PKGBUILD review and dependency ordering |
+| `aurora inspect <package> [--from\|-O\|-A] [--raw] [--json]` | Inspect a PKGBUILD or official package metadata (alias: `pkgbuild`) |
+| `aurora search <query...> [--from\|-O\|-A] [--json]` | Search official repos and the AUR concurrently |
+| `aurora info <package...> [--from\|-O\|-A] [--json]` | Show detailed package information |
+| `aurora install <package...> [--from\|-O\|-A] [--dry-run] [-i] [--diff] [--no-deps]` | Install in batch with preview, PKGBUILD review and dependency ordering |
 | `aurora remove <package...>` | Remove packages with orphan cleanup (`-Rns`) |
-| `aurora update [--dry-run] [--diff]` | Full system upgrade, then rebuild outdated AUR packages |
+| `aurora update [--dry-run] [--diff] [--no-deps]` | Full system upgrade, then rebuild outdated AUR packages |
 | `aurora autoremove` | Remove unneeded orphan dependencies (apt-style) |
-| `aurora list [query] [--flags] [--json]` | List packages (`--upgradable`, `--orphans`, `--official`, `--foreign`, `--all`) |
-| `aurora clean [--dry-run] [--pacman] [--all]` | Reclaim disk space from build artifacts and package caches |
+| `aurora list [query] [--official\|--foreign\|--orphans\|--upgradable] [--all] [--json]` | List packages by category |
+| `aurora clean [--cache\|--pacman\|--all] [--dry-run]` | Reclaim disk space from build artifacts and package caches |
 | `aurora selfupdate [--check] [--force]` | Update Aurora itself from GitHub Releases |
-| `aurora completion <shell>` | Print a completion script |
+| `aurora completion <bash\|zsh\|fish\|powershell>` | Print a completion script |
 
 ### Global Flags
 
@@ -133,7 +133,7 @@ sudo install -m 755 aurora-linux-amd64 /usr/local/bin/aurora
 
 ### 2. Install with Go
 
-Requires Go 1.25+:
+Requires Go 1.25.6 or newer:
 
 ```bash
 go install github.com/abhigyan-chatterjee/aurora@latest
@@ -220,4 +220,8 @@ aurora remove neovim
 
 We value clarity and transparency. If you have an idea, open an issue first — we prioritize changes that keep Aurora transparent and predictable.
 
-Every change is expected to keep `gofmt`, `go vet` and `go test -race ./...` clean.
+Every change is expected to keep `gofmt`, `go vet`, `staticcheck` and `go test -race ./...` clean; CI enforces all four, plus `govulncheck`.
+
+## License
+
+GPL-3.0. See [LICENSE](LICENSE).
