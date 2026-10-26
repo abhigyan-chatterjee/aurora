@@ -247,8 +247,15 @@ func CheckUpdates() (map[string][2]string, bool, error) {
 		return nil, false, nil
 	}
 
-	out, err := run.OutputOrEmpty(2*run.QueryTimeout, "checkupdates")
+	out, err := run.Output(2*run.QueryTimeout, "checkupdates")
 	if err != nil {
+		// checkupdates exits 2 when there is nothing to upgrade, which is a
+		// result rather than a failure. Exit 1 means it could not fetch the
+		// database at all, and treating that as "no updates" would hide a
+		// broken mirror behind "everything is up to date".
+		if run.IsExitCode(err, 2) {
+			return nil, true, nil
+		}
 		return nil, true, err
 	}
 
