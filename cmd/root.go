@@ -20,7 +20,7 @@ var (
 
 	// Version is the application version, overridable at build time via:
 	// -ldflags "-X github.com/abhigyan-chatterjee/aurora/cmd.Version=x.y.z"
-	Version = "0.5.0"
+	Version = "0.6.0"
 
 	// appConfig is the merged config file and flag state for this run.
 	appConfig = config.Default()

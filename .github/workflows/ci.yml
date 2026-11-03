@@ -28,7 +28,7 @@ jobs:
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Ensure safe.directory after checkout
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"

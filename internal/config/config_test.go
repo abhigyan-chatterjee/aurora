@@ -85,11 +85,12 @@ func TestLoad_RejectsUnknownKey(t *testing.T) {
 
 func TestLoad_RejectsBadValues(t *testing.T) {
 	cases := map[string]string{
-		"bad bool":      "quiet = maybe\n",
-		"bad int":       "parallelism = lots\n",
-		"bad source":    "default_source = \"mars\"\n",
-		"out of range":  "parallelism = 500\n",
-		"missing value": "quiet\n",
+		"bad bool":       "quiet = maybe\n",
+		"bad int":        "parallelism = lots\n",
+		"bad source":     "default_source = \"mars\"\n",
+		"out of range":   "parallelism = 500\n",
+		"missing value":  "quiet\n",
+		"bad prefer_bin": "prefer_bin = \"maybe\"\n",
 	}
 
 	for name, body := range cases {
