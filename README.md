@@ -1,6 +1,26 @@
-# Aurora v0.5 🎉
+# Aurora v0.6 🎉
 
 **Aurora** is a package workflow assistant for Arch-based Linux that combines the raw AUR power of **Paru** with the memorable simplicity of **apt**. It prioritizes official Arch repositories over the AUR, explains every operation in plain English, and keeps your system safe and clean.
+
+---
+
+## What's New in v0.6
+
+v0.6 asks one question the AUR never does: someone already built this for you, do you want the compiled copy or the recipe?
+
+### ⚡ Binary or source, asked once
+
+- **`-bin` detection on install** — when `aurora install` resolves a package to the AUR, it checks whether `<package>-bin` exists and, if it does, explains the trade in plain English: the binary installs in seconds with no toolchain, the source package compiles locally and can take much longer. You pick one.
+- **Numbered choice** — `[1] <package>-bin (binary, recommended)`, `[2] <package> (source)`, default 1. Enter with no input takes the binary; a non-interactive stdin takes the binary with a warning instead of hanging.
+- **Batch installs stay readable** — when several packages in one command have a `-bin` variant, each prompt is numbered (`[2/3]`) and the selection is echoed before the plan is built.
+- **`prefer_bin` config key** — `prompt` (default), `always`, or `never`. `always` selects the binary without asking and prints that it did so; `never` skips the AUR lookup entirely. `--yes` selects the binary too.
+
+### 🎯 Scope guards
+
+- A package already named `*-bin` is never checked for a `-bin` variant of itself.
+- A package you explicitly listed in the same command is never offered a replacement.
+- Official repository packages are never checked; the lookup queries the AUR RPC only, so a package that exists solely in an official repo is not treated as a `-bin` candidate.
+- **Fail-open** — if the AUR RPC times out (2.5s) or returns malformed data, install continues with the package you asked for. A failed convenience check never blocks an install.
 
 ---
 
@@ -48,7 +68,7 @@ v0.5 fixes a PKGBUILD parser that reported the wrong dependencies, makes the CLI
 | `aurora inspect <package> [--from\|-O\|-A] [--raw] [--json]` | Inspect a PKGBUILD or official package metadata (alias: `pkgbuild`) |
 | `aurora search <query...> [--from\|-O\|-A] [--json]` | Search official repos and the AUR concurrently |
 | `aurora info <package...> [--from\|-O\|-A] [--json]` | Show detailed package information |
-| `aurora install <package...> [--from\|-O\|-A] [--dry-run] [-i] [--diff] [--no-deps]` | Install in batch with preview, PKGBUILD review and dependency ordering |
+| `aurora install <package...> [--from\|-O\|-A] [--dry-run] [-i] [--diff] [--no-deps]` | Install in batch with preview, PKGBUILD review, dependency ordering and a `-bin` vs source choice |
 | `aurora remove <package...>` | Remove packages with orphan cleanup (`-Rns`) |
 | `aurora update [--dry-run] [--diff] [--no-deps]` | Full system upgrade, then rebuild outdated AUR packages |
 | `aurora autoremove` | Remove unneeded orphan dependencies (apt-style) |
@@ -195,12 +215,18 @@ aurora remove neovim
 - **The update plan is computed before the system upgrade.** If `pacman -Syu` changes something that makes an AUR rebuild pointless, the rebuild still runs. Re-running `aurora update` after a large upgrade gets a fresh plan.
 - **PKGBUILD parsing is not a shell.** It reads declarations, not expressions: a `pkgver` computed at build time shows as the literal text. Braces inside an unquoted here-document whose body is unbalanced can end a function body early.
 - **`list --upgradable` depends on `checkupdates`** (pacman-contrib) for repository upgrades. Without it Aurora says so instead of reporting a false all-clear.
+- **A `-bin` package is a different package.** It has its own maintainer, its own version and its own trust story, and it may lag upstream or carry patches. Aurora shows you the name and asks; it does not compare the two versions or vouch for the binary.
 
 ---
 
 ## Roadmap
 
-- **v0.5 — Correctness, Scriptability & Diagnostics** (this release)
+- **v0.6 — AUR Binary Awareness** (this release)
+  - `-bin` detection on `install`: explains binary vs source and asks which one you want
+  - Numbered batch prompts, `prefer_bin = prompt|always|never`, `--yes` selects the binary
+  - Scope guards for `-bin` names, explicitly requested packages and official repo packages
+  - Fail-open on AUR RPC errors and a 2.5s timeout on the lookup
+- **v0.5 — Correctness, Scriptability & Diagnostics** (complete)
   - PKGBUILD parser rewritten: dependencies, split packages, appends, comments, function bodies
   - `--json`, `--quiet`, config file, `aurora outdated`, `aurora doctor`, shell completion
   - AUR dependency ordering, opt-in PKGBUILD diff, architecture-aware self-update
