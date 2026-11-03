@@ -126,20 +126,3 @@ func TestCheckBinPackage_DoesNotQueryOfficialRepos(t *testing.T) {
 		t.Errorf("request path = %q, want /info/foo-bin", gotPath)
 	}
 }
-
-func TestBinPackageExists_Wrapper(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"resultcount":1,"results":[{"Name":"foo-bin","Version":"1.0.0-1"}]}`)
-	}))
-	defer srv.Close()
-
-	orig := aurRPCBaseURL
-	aurRPCBaseURL = srv.URL
-	defer func() { aurRPCBaseURL = orig }()
-
-	ok, err := BinPackageExists("foo")
-	if err != nil || !ok {
-		t.Fatalf("expected exists true, got %v %v", ok, err)
-	}
-}

@@ -100,6 +100,10 @@ pkgbuild_diff = false
 
 # Resolve and order AUR dependencies before building
 aur_deps = true
+
+# Strategy for AUR packages when a matching -bin package exists:
+# "prompt" (default), "always", or "never"
+prefer_bin = "prompt"
 ```
 
 Run `aurora doctor` to confirm the file was picked up.

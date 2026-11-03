@@ -225,6 +225,31 @@ func resolveForInstall(validArgs []string, filter sourceFilter) []*resolve.Resol
 // buildInstallPlan turns resolved packages into official and AUR plans,
 // offering suggestions for a single package that was not found.
 func buildInstallPlan(resolvedList []*resolve.ResolvedPackage, reader *bufio.Reader, filter sourceFilter) (official, aurPlan []installPlanItem, errs []error) {
+	// Pre-pass: determine which AUR candidates have a -bin variant available,
+	// so batch progress headers can be numbered correctly and the -bin lookup
+	// is not repeated for every candidate.
+	binCache := make(map[string]*resolve.AURResult)
+	qualifying := make([]string, 0)
+	for _, res := range resolvedList {
+		if res.ChosenSource != resolve.SourceAUR || res.AURResult == nil {
+			continue
+		}
+		name := res.AURResult.Name
+		if !shouldCheckBin(name) || queuedBinName(resolvedList, name+"-bin") {
+			continue
+		}
+		binRes, err := aur.CheckBinPackage(name)
+		if err == nil && binRes != nil && ui.IsValidPkgName(binRes.Name) {
+			binCache[name] = binRes
+			qualifying = append(qualifying, name)
+		}
+	}
+	qualifyingCount := len(qualifying)
+	qualIndex := make(map[string]int, qualifyingCount)
+	for i, n := range qualifying {
+		qualIndex[n] = i + 1
+	}
+
 	for _, res := range resolvedList {
 		warnResolution(res.Query, res.Warnings)
 
@@ -243,10 +268,42 @@ func buildInstallPlan(resolvedList []*resolve.ResolvedPackage, reader *bufio.Rea
 				Version: res.PacmanResult.Version,
 			})
 		case res.ChosenSource == resolve.SourceAUR && res.AURResult != nil:
+			name := res.AURResult.Name
+			finalName := name
+			finalVersion := res.AURResult.Version
+
+			if binRes, ok := binCache[name]; ok {
+				if qualifyingCount > 1 {
+					ui.Out("[%d/%d] AUR package '%s':\n", qualIndex[name], qualifyingCount, name)
+				}
+				autoConfirm := yesFlag || strings.EqualFold(appConfig.PreferBin, "always")
+				var choice ui.BinPromptChoice
+				if autoConfirm {
+					if yesFlag {
+						choice = ui.PromptBinSelection(reader, name, binRes.Name, conciseFlag, true)
+					} else {
+						ui.Out("Found '%s' in AUR. Selecting binary package (config: prefer_bin = always).\n", binRes.Name)
+						choice = ui.BinChoiceBinary
+					}
+				} else {
+					choice = ui.PromptBinSelection(reader, name, binRes.Name, conciseFlag, false)
+				}
+				switch choice {
+				case ui.BinChoiceBinary:
+					finalName = binRes.Name
+					finalVersion = binRes.Version
+				case ui.BinChoiceSkip:
+					continue
+				}
+				if qualifyingCount > 1 {
+					ui.Out("Selected '%s'.\n", finalName)
+				}
+			}
+
 			aurPlan = append(aurPlan, installPlanItem{
-				Name:    res.AURResult.Name,
+				Name:    finalName,
 				Source:  resolve.SourceAUR,
-				Version: res.AURResult.Version,
+				Version: finalVersion,
 			})
 		default:
 			// Not found by exact name. Offer suggestions only for a single
@@ -256,7 +313,11 @@ func buildInstallPlan(resolvedList []*resolve.ResolvedPackage, reader *bufio.Rea
 					if item.Source == resolve.SourceOfficial {
 						official = append(official, item)
 					} else {
-						aurPlan = append(aurPlan, item)
+						updated, skipped := applyAURBinChoice(item, reader, resolvedList)
+						if skipped {
+							continue
+						}
+						aurPlan = append(aurPlan, updated)
 					}
 					continue
 				}
@@ -267,6 +328,40 @@ func buildInstallPlan(resolvedList []*resolve.ResolvedPackage, reader *bufio.Rea
 		}
 	}
 	return official, aurPlan, errs
+}
+
+// applyAURBinChoice runs the AUR -bin check for a package selected via the
+// Did-You-Mean flow. It returns the (possibly renamed) item and whether the
+// user chose to skip it.
+func applyAURBinChoice(item installPlanItem, reader *bufio.Reader, resolvedList []*resolve.ResolvedPackage) (installPlanItem, bool) {
+	name := item.Name
+	if !shouldCheckBin(name) || queuedBinName(resolvedList, name+"-bin") {
+		return item, false
+	}
+	binRes, err := aur.CheckBinPackage(name)
+	if err != nil || binRes == nil || !ui.IsValidPkgName(binRes.Name) {
+		return item, false
+	}
+	autoConfirm := yesFlag || strings.EqualFold(appConfig.PreferBin, "always")
+	var choice ui.BinPromptChoice
+	if autoConfirm {
+		if yesFlag {
+			choice = ui.PromptBinSelection(reader, name, binRes.Name, conciseFlag, true)
+		} else {
+			ui.Out("Found '%s' in AUR. Selecting binary package (config: prefer_bin = always).\n", binRes.Name)
+			choice = ui.BinChoiceBinary
+		}
+	} else {
+		choice = ui.PromptBinSelection(reader, name, binRes.Name, conciseFlag, false)
+	}
+	switch choice {
+	case ui.BinChoiceBinary:
+		item.Name = binRes.Name
+		item.Version = binRes.Version
+	case ui.BinChoiceSkip:
+		return item, true
+	}
+	return item, false
 }
 
 // promptSuggestion offers the closest matches for a single missing package.
@@ -347,6 +442,34 @@ func promptSuggestion(res *resolve.ResolvedPackage, reader *bufio.Reader, filter
 	return item, ok
 }
 
+// shouldCheckBin reports whether pkgName should be checked for a -bin variant.
+func shouldCheckBin(pkgName string) bool {
+	if strings.HasSuffix(strings.ToLower(pkgName), "-bin") {
+		return false
+	}
+	if strings.EqualFold(appConfig.PreferBin, "never") {
+		return false
+	}
+	return true
+}
+
+// queuedBinName reports whether a -bin package is already part of the requested
+// batch, so we do not prompt to replace a package the user explicitly asked for.
+func queuedBinName(resolvedList []*resolve.ResolvedPackage, binName string) bool {
+	for _, res := range resolvedList {
+		if res.AURResult != nil && strings.EqualFold(res.AURResult.Name, binName) {
+			return true
+		}
+		if res.PacmanResult != nil && strings.EqualFold(res.PacmanResult.Name, binName) {
+			return true
+		}
+		if strings.EqualFold(res.Query, binName) {
+			return true
+		}
+	}
+	return false
+}
+
 func printInstallPlan(official, aurPlan []installPlanItem) {
 	ui.Preview("\nAurora is about to install:\n")
 	for _, item := range official {
@@ -372,6 +495,11 @@ var installCmd = &cobra.Command{
 
 Supports batch installation, automatic Did-You-Mean suggestions, source filtering,
 PKGBUILD review, and AUR dependency ordering.
+
+When an AUR source package has a matching -bin package, Aurora offers to install
+the pre-compiled binary instead. Official repository packages are never checked.
+In non-interactive mode (--yes or a closed stdin) Aurora defaults to the -bin
+package.
 
 Examples:
   aurora install neovim git ripgrep

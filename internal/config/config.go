@@ -1,8 +1,8 @@
 // Package config loads Aurora's user configuration.
 //
 // The file is a TOML subset: top-level `key = value` pairs, one per line, with
-// `#` comments. That is deliberately small. Aurora needs nine settings, and a
-// full TOML dependency for nine settings is not a trade worth making.
+// `#` comments. That is deliberately small. Aurora needs ten settings, and a
+// full TOML dependency for ten settings is not a trade worth making.
 package config
 
 import (
@@ -36,6 +36,9 @@ type Config struct {
 	PKGBUILDDiff bool
 	// AURDeps resolves and orders AUR dependencies before building.
 	AURDeps bool
+	// PreferBin controls whether Aurora suggests a matching -bin package for
+	// AUR source packages. Allowed: "prompt" (default), "always", "never".
+	PreferBin string
 }
 
 // Default returns the configuration used when no file exists.
@@ -50,6 +53,7 @@ func Default() Config {
 		DefaultSource:     "any",
 		PKGBUILDDiff:      false,
 		AURDeps:           true,
+		PreferBin:         "prompt",
 	}
 }
 
@@ -124,6 +128,11 @@ func (c Config) Validate() error {
 	default:
 		return fmt.Errorf("default_source must be one of any, official, repo, aur; got %q", c.DefaultSource)
 	}
+	switch strings.ToLower(c.PreferBin) {
+	case "prompt", "always", "never":
+	default:
+		return fmt.Errorf("prefer_bin must be one of prompt, always, never; got %q", c.PreferBin)
+	}
 	return nil
 }
 
@@ -141,6 +150,9 @@ func (c *Config) set(key, rawValue string) error {
 		return setBool(&c.PKGBUILDDiff, key, rawValue)
 	case "aur_deps":
 		return setBool(&c.AURDeps, key, rawValue)
+	case "prefer_bin":
+		c.PreferBin = strings.ToLower(unquote(rawValue))
+		return nil
 	case "parallelism":
 		n, err := strconv.Atoi(rawValue)
 		if err != nil {
